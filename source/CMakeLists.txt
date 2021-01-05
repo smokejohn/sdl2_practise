@@ -13,3 +13,11 @@ add_executable(sdl2test
     )
 
 target_link_libraries(sdl2test PRIVATE SDL2::SDL2)
+
+# custom command to copy resource files to build directory later
+# add_custom_command(
+#     TARGET sdl2test POST_BUILD
+#     COMMAND ${CMAKE_COMMAND} -E copy
+#             ${CMAKE_SOURCE_DIR}../resources/hello_world.bmp
+#             ${CMAKE_CURRENT_BINARY_DIR}/resources/hello_world.bmp
+#     )
