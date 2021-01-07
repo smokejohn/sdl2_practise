@@ -1,4 +1,5 @@
 #include <SDL.h>
+#include <SDL_image.h>
 
 #include <iostream>
 //
@@ -29,11 +30,10 @@ SDL_Surface* loadSurface(std::string path) {
     SDL_Surface* optimizedSurface = NULL;
 
     // load image at specified path
-    SDL_Surface* loadedSurface = SDL_LoadBMP(path.c_str());
+    SDL_Surface* loadedSurface = IMG_Load(path.c_str());
     if (loadedSurface == NULL) {
-        std::cout << "Unable to load image " << path << "! SDL Error: " << SDL_GetError() << "\n";
-    }
-    else {
+        std::cout << "Unable to load image " << path << "! SDL_image Error: " << IMG_GetError() << "\n";
+    } else {
         // convert surface to screen format
         optimizedSurface = SDL_ConvertSurface(loadedSurface, gScreenSurface->format, 0);
         if (optimizedSurface == NULL) {
@@ -54,15 +54,25 @@ bool init() {
     // initialize SDL
     if (SDL_Init(SDL_INIT_VIDEO) < 0) {
         std::cout << "SDL could not initialize! SDL_Error: " << SDL_GetError() << "\n";
+        success = false;
     } else {
         // create window
         gWindow = SDL_CreateWindow("SDL Test", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, SCREEN_WIDTH,
                                    SCREEN_HEIGHT, SDL_WINDOW_SHOWN);
         if (gWindow == NULL) {
             std::cout << "Window could not be created! " << SDL_GetError() << "\n";
+            success = false;
         } else {
-            // get window surface
-            gScreenSurface = SDL_GetWindowSurface(gWindow);
+            // initialize PNG loading
+            int imgFlags = IMG_INIT_PNG;
+            if (!(IMG_Init(imgFlags) & imgFlags)) {
+                std::cout << "SDL_image could not initialize! SDL_image Eror: " << IMG_GetError() << "\n";
+                success = false;
+
+            } else {
+                // get window surface
+                gScreenSurface = SDL_GetWindowSurface(gWindow);
+            }
         }
     }
 
@@ -73,7 +83,7 @@ bool loadMedia() {
     // loading success flag
     bool success = true;
 
-    gStretchedSurface = loadSurface("./resources/stretch.bmp");
+    gStretchedSurface = loadSurface("./resources/loaded.png");
     if (gStretchedSurface == NULL) {
         std::cout << "Media could not be loaded! SDL_ERROR: " << SDL_GetError() << "\n";
         success = false;
