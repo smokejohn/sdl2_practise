@@ -49,7 +49,6 @@ bool init() {
                 success = false;
             } else {
                 // initialize renderer color
-                SDL_SetRenderDrawColor(gRenderer, 255, 255, 255, 255);
 
                 // initialize PNG loading
                 int imgFlags = IMG_INIT_PNG;
@@ -68,12 +67,7 @@ bool loadMedia() {
     // loading success flag
     bool success = true;
 
-     gTexture = loadTexture("./resources/texture.png");
-    if (gTexture == NULL) {
-        std::cout << "Failed to load texture image!\n";
-        success = false;
-    }
-
+    // no media to load
     return success;
 }
 
@@ -99,7 +93,7 @@ SDL_Texture* loadTexture(std::string path) {
 
     // load image at specified path
     SDL_Surface* loadedSurface = IMG_Load(path.c_str());
-    if(loadedSurface == NULL) {
+    if (loadedSurface == NULL) {
         std::cout << "Unable to load image " << path.c_str() << "! SDL_image Error: " << IMG_GetError() << "\n";
     } else {
         // create texture from surface pixels
@@ -141,10 +135,29 @@ int main(int argc, char* argv[]) {
                 }
 
                 // clear screen
+                SDL_SetRenderDrawColor(gRenderer, 255, 255, 255, 255);
                 SDL_RenderClear(gRenderer);
 
-                // render texture to screen
-                SDL_RenderCopy(gRenderer, gTexture, NULL, NULL);
+                // render red filled quad
+                SDL_Rect fillRect = {SCREEN_WIDTH / 4, SCREEN_HEIGHT / 4, SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2};
+                SDL_SetRenderDrawColor(gRenderer, 255, 0, 0, 255);
+                SDL_RenderFillRect(gRenderer, &fillRect);
+
+                // render green outlined quad
+                SDL_Rect outlineRect = {SCREEN_WIDTH / 6, SCREEN_HEIGHT / 6, SCREEN_WIDTH * 2 / 3,
+                                        SCREEN_HEIGHT * 2 / 3};
+                SDL_SetRenderDrawColor(gRenderer, 0, 255, 0, 255);
+                SDL_RenderDrawRect(gRenderer, &outlineRect);
+
+                // draw blue horizontal line
+                SDL_SetRenderDrawColor(gRenderer, 0, 0, 255, 255);
+                SDL_RenderDrawLine(gRenderer, 0, SCREEN_HEIGHT / 2, SCREEN_WIDTH, SCREEN_HEIGHT / 2);
+
+                // draw vertical line of black dots
+                SDL_SetRenderDrawColor(gRenderer, 0, 0, 0, 255);
+                for (int i = 0; i < SCREEN_HEIGHT; i+=4) {
+                    SDL_RenderDrawPoint(gRenderer, SCREEN_WIDTH/2, i);
+                }
 
                 // update the screen
                 SDL_RenderPresent(gRenderer);
