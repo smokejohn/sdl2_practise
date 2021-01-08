@@ -2,7 +2,6 @@
 #include <SDL_image.h>
 
 #include <iostream>
-//
 
 // starts up SDL and creates a window
 bool init();
@@ -17,11 +16,11 @@ SDL_Texture* loadTexture(std::string path);
 // the window we will be rendering to
 SDL_Window* gWindow = NULL;
 
+// texture
+SDL_Texture* gTexture = NULL;
+
 // the window renderer
 SDL_Renderer* gRenderer = NULL;
-
-// current displayed image
-SDL_Texture* gTexture = NULL;
 
 const int SCREEN_WIDTH = 640;
 const int SCREEN_HEIGHT = 480;
@@ -67,12 +66,19 @@ bool loadMedia() {
     // loading success flag
     bool success = true;
 
+    // load viewport image
+    gTexture = loadTexture("./resources/viewport.png");
+    if (gTexture == NULL) {
+        std::cout << "Could not load viewport texture! SDL Error: " << SDL_GetError() << "\n";
+        success = false;
+    }
+
     // no media to load
     return success;
 }
 
 void close() {
-    // free loaded image
+    // free textures
     SDL_DestroyTexture(gTexture);
     gTexture = NULL;
 
@@ -135,29 +141,41 @@ int main(int argc, char* argv[]) {
                 }
 
                 // clear screen
-                SDL_SetRenderDrawColor(gRenderer, 255, 255, 255, 255);
+                /* SDL_SetRenderDrawColor(gRenderer, 255, 255, 255, 255); */
+                SDL_SetRenderDrawColor(gRenderer, 0, 0, 0, 255);
                 SDL_RenderClear(gRenderer);
 
-                // render red filled quad
-                SDL_Rect fillRect = {SCREEN_WIDTH / 4, SCREEN_HEIGHT / 4, SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2};
-                SDL_SetRenderDrawColor(gRenderer, 255, 0, 0, 255);
-                SDL_RenderFillRect(gRenderer, &fillRect);
+                // top left corner viewport
+                SDL_Rect topLeftViewport;
+                topLeftViewport.x = 0;
+                topLeftViewport.y = 0;
+                topLeftViewport.w = SCREEN_WIDTH / 2;
+                topLeftViewport.h = SCREEN_HEIGHT / 2;
+                SDL_RenderSetViewport(gRenderer, &topLeftViewport);
 
-                // render green outlined quad
-                SDL_Rect outlineRect = {SCREEN_WIDTH / 6, SCREEN_HEIGHT / 6, SCREEN_WIDTH * 2 / 3,
-                                        SCREEN_HEIGHT * 2 / 3};
-                SDL_SetRenderDrawColor(gRenderer, 0, 255, 0, 255);
-                SDL_RenderDrawRect(gRenderer, &outlineRect);
+                // render texture to top left
+                SDL_RenderCopy(gRenderer, gTexture, NULL, NULL);
 
-                // draw blue horizontal line
-                SDL_SetRenderDrawColor(gRenderer, 0, 0, 255, 255);
-                SDL_RenderDrawLine(gRenderer, 0, SCREEN_HEIGHT / 2, SCREEN_WIDTH, SCREEN_HEIGHT / 2);
+                // top left corner viewport
+                SDL_Rect topRightViewport;
+                topRightViewport.x = SCREEN_WIDTH / 2;
+                topRightViewport.y = 0;
+                topRightViewport.w = SCREEN_WIDTH / 2;
+                topRightViewport.h = SCREEN_HEIGHT / 2;
+                SDL_RenderSetViewport(gRenderer, &topRightViewport);
 
-                // draw vertical line of black dots
-                SDL_SetRenderDrawColor(gRenderer, 0, 0, 0, 255);
-                for (int i = 0; i < SCREEN_HEIGHT; i+=4) {
-                    SDL_RenderDrawPoint(gRenderer, SCREEN_WIDTH/2, i);
-                }
+                // render texture to top right
+                SDL_RenderCopy(gRenderer, gTexture, NULL, NULL);
+
+                // bottom viewport
+                SDL_Rect bottomViewport;
+                bottomViewport.x = 0;
+                bottomViewport.y = SCREEN_HEIGHT / 2;
+                bottomViewport.w = SCREEN_WIDTH;
+                bottomViewport.h = SCREEN_HEIGHT / 2;
+                SDL_RenderSetViewport(gRenderer, &bottomViewport);
+
+                SDL_RenderCopy(gRenderer, gTexture, NULL, NULL);
 
                 // update the screen
                 SDL_RenderPresent(gRenderer);
