@@ -19,7 +19,7 @@ class LTexture {
     void free();
 
     // renders texture at given point
-    void render(int x, int y);
+    void render(int x, int y, SDL_Rect* clip = NULL);
 
     // gets image dimensions
     int getWidth();
@@ -47,9 +47,9 @@ SDL_Texture* loadTexture(std::string path);
 // the window we will be rendering to
 SDL_Window* gWindow = NULL;
 
-// scene textures
-LTexture gFooTexture;
-LTexture gBackgroundTexture;
+// scene sprites
+SDL_Rect gSpriteClips[4];
+LTexture gSpriteSheetTexture;
 
 // the window renderer
 SDL_Renderer* gRenderer = NULL;
@@ -113,10 +113,16 @@ void LTexture::free() {
     }
 }
 
-void LTexture::render(int x, int y) {
+void LTexture::render(int x, int y, SDL_Rect* clip) {
     // set rendering space and render to screen
     SDL_Rect renderQuad = {x, y, mWidth, mHeight};
-    SDL_RenderCopy(gRenderer, mTexture, NULL, &renderQuad);
+
+    // set clip rendering dimensions
+    if (clip != NULL) {
+        renderQuad.w = clip->w;
+        renderQuad.h = clip->h;
+    }
+    SDL_RenderCopy(gRenderer, mTexture, clip, &renderQuad);
 }
 
 int LTexture::getWidth() { return mWidth; }
@@ -164,16 +170,17 @@ bool loadMedia() {
     // loading success flag
     bool success = true;
 
-    // load foo texture
-    if (!gFooTexture.loadFromFile("./resources/foo.png")) {
+    // load spritesheet texture
+    if (!gSpriteSheetTexture.loadFromFile("./resources/dots.png")) {
         std::cout << "Could not load foo texture!\n";
         success = false;
-    }
-
-    // load background texture
-    if (!gBackgroundTexture.loadFromFile("./resources/background.png")) {
-        std::cout << "Could not load background texture!\n";
-        success = false;
+    } else {
+        // clip sprites (x, y, width, height)
+        // TopLeft, TopRight, BottomLeft, BottomRight
+        gSpriteClips[0] = {0, 0, 100, 100};
+        gSpriteClips[1] = {100, 0, 100, 100};
+        gSpriteClips[2] = {0, 100, 100, 100};
+        gSpriteClips[3] = {100, 100, 100, 100};
     }
 
     return success;
@@ -181,8 +188,7 @@ bool loadMedia() {
 
 void close() {
     // free loaded images
-    gFooTexture.free();
-    gBackgroundTexture.free();
+    gSpriteSheetTexture.free();
 
     // destroy window
     SDL_DestroyRenderer(gRenderer);
@@ -243,14 +249,18 @@ int main(int argc, char* argv[]) {
                 }
 
                 // clear screen
-                SDL_SetRenderDrawColor(gRenderer, 0, 0, 0, 255);
+                SDL_SetRenderDrawColor(gRenderer, 255, 255, 255, 255);
                 SDL_RenderClear(gRenderer);
 
-                // render the background texture
-                gBackgroundTexture.render(0, 0);
-
-                // render foo to the screen
-                gFooTexture.render(240, 190);
+                // draw sprites
+                // top left
+                gSpriteSheetTexture.render(0, 0, &gSpriteClips[0]);
+                // top right
+                gSpriteSheetTexture.render(SCREEN_WIDTH - gSpriteClips[1].w, 0, &gSpriteClips[1]);
+                // bottom left
+                gSpriteSheetTexture.render(0, SCREEN_HEIGHT - gSpriteClips[2].h, &gSpriteClips[2]);
+                // bottom right
+                gSpriteSheetTexture.render(SCREEN_WIDTH - gSpriteClips[3].w, SCREEN_HEIGHT - gSpriteClips[3].h, &gSpriteClips[3]);
 
                 // update the screen
                 SDL_RenderPresent(gRenderer);
