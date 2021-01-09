@@ -3,6 +3,37 @@
 
 #include <iostream>
 
+// texture wrapper class
+class LTexture {
+   public:
+    // initalizes variables
+    LTexture();
+
+    // deallocates memory
+    ~LTexture();
+
+    // loads image at specified path
+    bool loadFromFile(std::string path);
+
+    // deallocates texture
+    void free();
+
+    // renders texture at given point
+    void render(int x, int y);
+
+    // gets image dimensions
+    int getWidth();
+    int getHeight();
+
+   private:
+    // the actual hardware texture
+    SDL_Texture* mTexture;
+
+    // image dimensions
+    int mWidth;
+    int mHeight;
+};
+
 // starts up SDL and creates a window
 bool init();
 // loads media
@@ -16,14 +47,81 @@ SDL_Texture* loadTexture(std::string path);
 // the window we will be rendering to
 SDL_Window* gWindow = NULL;
 
-// texture
-SDL_Texture* gTexture = NULL;
+// scene textures
+LTexture gFooTexture;
+LTexture gBackgroundTexture;
 
 // the window renderer
 SDL_Renderer* gRenderer = NULL;
 
 const int SCREEN_WIDTH = 640;
 const int SCREEN_HEIGHT = 480;
+
+LTexture::LTexture() {
+    // initialize
+    mTexture = NULL;
+    mWidth = 0;
+    mHeight = 0;
+}
+
+LTexture::~LTexture() {
+    // deallocate
+    free();
+}
+
+bool LTexture::loadFromFile(std::string path) {
+    // get rid of preexisting texture
+    free();
+
+    // the final texture
+    SDL_Texture* newTexture = NULL;
+
+    // load image at specified path
+    SDL_Surface* loadedSurface = IMG_Load(path.c_str());
+    if (loadedSurface == NULL) {
+        std::cout << "Unable to load image " << path << "! SDL_image Error: " << IMG_GetError() << "\n";
+    } else {
+        // color key the image
+        SDL_SetColorKey(loadedSurface, SDL_TRUE, SDL_MapRGB(loadedSurface->format, 0, 255, 255));
+
+        // create texture from surface pixels
+        newTexture = SDL_CreateTextureFromSurface(gRenderer, loadedSurface);
+        if (newTexture == NULL) {
+            std::cout << "Unable to create texture from " << path << "! SDL Error: " << SDL_GetError() << "\n";
+        } else {
+            // get image dimensions
+            mWidth = loadedSurface->w;
+            mHeight = loadedSurface->h;
+        }
+
+        // get rid of old loaded surface
+        SDL_FreeSurface(loadedSurface);
+    }
+
+    // return success
+    mTexture = newTexture;
+    return mTexture != NULL;
+}
+
+void LTexture::free() {
+    // free texture if it exists
+    if (mTexture != NULL) {
+        SDL_DestroyTexture(mTexture);
+        mTexture = NULL;
+        mWidth = 0;
+        mHeight = 0;
+    }
+}
+
+void LTexture::render(int x, int y) {
+    // set rendering space and render to screen
+    SDL_Rect renderQuad = {x, y, mWidth, mHeight};
+    SDL_RenderCopy(gRenderer, mTexture, NULL, &renderQuad);
+}
+
+int LTexture::getWidth() { return mWidth; }
+
+int LTexture::getHeight() { return mHeight; }
 
 bool init() {
     // initalization flag
@@ -66,21 +164,25 @@ bool loadMedia() {
     // loading success flag
     bool success = true;
 
-    // load viewport image
-    gTexture = loadTexture("./resources/viewport.png");
-    if (gTexture == NULL) {
-        std::cout << "Could not load viewport texture! SDL Error: " << SDL_GetError() << "\n";
+    // load foo texture
+    if (!gFooTexture.loadFromFile("./resources/foo.png")) {
+        std::cout << "Could not load foo texture!\n";
         success = false;
     }
 
-    // no media to load
+    // load background texture
+    if (!gBackgroundTexture.loadFromFile("./resources/background.png")) {
+        std::cout << "Could not load background texture!\n";
+        success = false;
+    }
+
     return success;
 }
 
 void close() {
-    // free textures
-    SDL_DestroyTexture(gTexture);
-    gTexture = NULL;
+    // free loaded images
+    gFooTexture.free();
+    gBackgroundTexture.free();
 
     // destroy window
     SDL_DestroyRenderer(gRenderer);
@@ -141,41 +243,14 @@ int main(int argc, char* argv[]) {
                 }
 
                 // clear screen
-                /* SDL_SetRenderDrawColor(gRenderer, 255, 255, 255, 255); */
                 SDL_SetRenderDrawColor(gRenderer, 0, 0, 0, 255);
                 SDL_RenderClear(gRenderer);
 
-                // top left corner viewport
-                SDL_Rect topLeftViewport;
-                topLeftViewport.x = 0;
-                topLeftViewport.y = 0;
-                topLeftViewport.w = SCREEN_WIDTH / 2;
-                topLeftViewport.h = SCREEN_HEIGHT / 2;
-                SDL_RenderSetViewport(gRenderer, &topLeftViewport);
+                // render the background texture
+                gBackgroundTexture.render(0, 0);
 
-                // render texture to top left
-                SDL_RenderCopy(gRenderer, gTexture, NULL, NULL);
-
-                // top left corner viewport
-                SDL_Rect topRightViewport;
-                topRightViewport.x = SCREEN_WIDTH / 2;
-                topRightViewport.y = 0;
-                topRightViewport.w = SCREEN_WIDTH / 2;
-                topRightViewport.h = SCREEN_HEIGHT / 2;
-                SDL_RenderSetViewport(gRenderer, &topRightViewport);
-
-                // render texture to top right
-                SDL_RenderCopy(gRenderer, gTexture, NULL, NULL);
-
-                // bottom viewport
-                SDL_Rect bottomViewport;
-                bottomViewport.x = 0;
-                bottomViewport.y = SCREEN_HEIGHT / 2;
-                bottomViewport.w = SCREEN_WIDTH;
-                bottomViewport.h = SCREEN_HEIGHT / 2;
-                SDL_RenderSetViewport(gRenderer, &bottomViewport);
-
-                SDL_RenderCopy(gRenderer, gTexture, NULL, NULL);
+                // render foo to the screen
+                gFooTexture.render(240, 190);
 
                 // update the screen
                 SDL_RenderPresent(gRenderer);
