@@ -18,6 +18,9 @@ class LTexture {
     // deallocates texture
     void free();
 
+    // set color modulation
+    void setColor(Uint8 red, Uint8 green, Uint8 blue);
+
     // renders texture at given point
     void render(int x, int y, SDL_Rect* clip = NULL);
 
@@ -48,8 +51,7 @@ SDL_Texture* loadTexture(std::string path);
 SDL_Window* gWindow = NULL;
 
 // scene sprites
-SDL_Rect gSpriteClips[4];
-LTexture gSpriteSheetTexture;
+LTexture gModulatedTexture;
 
 // the window renderer
 SDL_Renderer* gRenderer = NULL;
@@ -113,6 +115,11 @@ void LTexture::free() {
     }
 }
 
+void LTexture::setColor(Uint8 red, Uint8 green, Uint8 blue) {
+    // modulate texture
+    SDL_SetTextureColorMod(mTexture, red, green, blue);
+}
+
 void LTexture::render(int x, int y, SDL_Rect* clip) {
     // set rendering space and render to screen
     SDL_Rect renderQuad = {x, y, mWidth, mHeight};
@@ -171,24 +178,16 @@ bool loadMedia() {
     bool success = true;
 
     // load spritesheet texture
-    if (!gSpriteSheetTexture.loadFromFile("./resources/dots.png")) {
-        std::cout << "Could not load foo texture!\n";
+    if (!gModulatedTexture.loadFromFile("./resources/colors.png")) {
+        std::cout << "Could not load colors texture!\n";
         success = false;
-    } else {
-        // clip sprites (x, y, width, height)
-        // TopLeft, TopRight, BottomLeft, BottomRight
-        gSpriteClips[0] = {0, 0, 100, 100};
-        gSpriteClips[1] = {100, 0, 100, 100};
-        gSpriteClips[2] = {0, 100, 100, 100};
-        gSpriteClips[3] = {100, 100, 100, 100};
     }
-
     return success;
 }
 
 void close() {
     // free loaded images
-    gSpriteSheetTexture.free();
+    gModulatedTexture.free();
 
     // destroy window
     SDL_DestroyRenderer(gRenderer);
@@ -238,6 +237,11 @@ int main(int argc, char* argv[]) {
             // event handler
             SDL_Event e;
 
+            // modulation components
+            Uint8 r = 255;
+            Uint8 g = 255;
+            Uint8 b = 255;
+
             // while application is running
             while (!quit) {
                 // handle events on queue
@@ -246,21 +250,39 @@ int main(int argc, char* argv[]) {
                     if (e.type == SDL_QUIT) {
                         quit = true;
                     }
+
+                    // user presses key
+                    else if (e.type == SDL_KEYDOWN) {
+                        switch (e.key.keysym.sym) {
+                            case SDLK_q:
+                                r += 32;
+                                break;
+                            case SDLK_w:
+                                g += 32;
+                                break;
+                            case SDLK_e:
+                                b += 32;
+                                break;
+                            case SDLK_a:
+                                r -= 32;
+                                break;
+                            case SDLK_s:
+                                g -= 32;
+                                break;
+                            case SDLK_d:
+                                b -= 32;
+                                break;
+                        }
+                    }
                 }
 
                 // clear screen
                 SDL_SetRenderDrawColor(gRenderer, 255, 255, 255, 255);
                 SDL_RenderClear(gRenderer);
 
-                // draw sprites
-                // top left
-                gSpriteSheetTexture.render(0, 0, &gSpriteClips[0]);
-                // top right
-                gSpriteSheetTexture.render(SCREEN_WIDTH - gSpriteClips[1].w, 0, &gSpriteClips[1]);
-                // bottom left
-                gSpriteSheetTexture.render(0, SCREEN_HEIGHT - gSpriteClips[2].h, &gSpriteClips[2]);
-                // bottom right
-                gSpriteSheetTexture.render(SCREEN_WIDTH - gSpriteClips[3].w, SCREEN_HEIGHT - gSpriteClips[3].h, &gSpriteClips[3]);
+                // modulate and render texture
+                gModulatedTexture.setColor(r, g, b);
+                gModulatedTexture.render(0, 0);
 
                 // update the screen
                 SDL_RenderPresent(gRenderer);
