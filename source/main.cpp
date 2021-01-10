@@ -21,6 +21,12 @@ class LTexture {
     // set color modulation
     void setColor(Uint8 red, Uint8 green, Uint8 blue);
 
+    // set blending
+    void setBlendMode(SDL_BlendMode blending);
+
+    // set alpha modulation
+    void setAlpha(Uint8 alpha);
+
     // renders texture at given point
     void render(int x, int y, SDL_Rect* clip = NULL);
 
@@ -50,8 +56,9 @@ SDL_Texture* loadTexture(std::string path);
 // the window we will be rendering to
 SDL_Window* gWindow = NULL;
 
-// scene sprites
+// textures
 LTexture gModulatedTexture;
+LTexture gBackgroundTexture;
 
 // the window renderer
 SDL_Renderer* gRenderer = NULL;
@@ -120,6 +127,16 @@ void LTexture::setColor(Uint8 red, Uint8 green, Uint8 blue) {
     SDL_SetTextureColorMod(mTexture, red, green, blue);
 }
 
+void LTexture::setBlendMode(SDL_BlendMode blending) {
+    // set blending function
+    SDL_SetTextureBlendMode(mTexture, blending);
+}
+
+void LTexture::setAlpha(Uint8 alpha) {
+    // modulate texture alpha
+    SDL_SetTextureAlphaMod(mTexture, alpha);
+}
+
 void LTexture::render(int x, int y, SDL_Rect* clip) {
     // set rendering space and render to screen
     SDL_Rect renderQuad = {x, y, mWidth, mHeight};
@@ -177,17 +194,28 @@ bool loadMedia() {
     // loading success flag
     bool success = true;
 
-    // load spritesheet texture
-    if (!gModulatedTexture.loadFromFile("./resources/colors.png")) {
-        std::cout << "Could not load colors texture!\n";
+    // load front alpha texture
+    if (!gModulatedTexture.loadFromFile("./resources/fadeout.png")) {
+        std::cout << "Could not front texture!\n";
+        success = false;
+    } else {
+        // set standard alpha blending
+        gModulatedTexture.setBlendMode(SDL_BLENDMODE_BLEND);
+    }
+
+    // load background texture
+    if (!gBackgroundTexture.loadFromFile("./resources/fadein.png")) {
+        std::cout << "Could not load background texture!\n";
         success = false;
     }
+
     return success;
 }
 
 void close() {
     // free loaded images
     gModulatedTexture.free();
+    gBackgroundTexture.free();
 
     // destroy window
     SDL_DestroyRenderer(gRenderer);
@@ -237,10 +265,8 @@ int main(int argc, char* argv[]) {
             // event handler
             SDL_Event e;
 
-            // modulation components
-            Uint8 r = 255;
-            Uint8 g = 255;
-            Uint8 b = 255;
+            // modulation component
+            Uint8 a = 255;
 
             // while application is running
             while (!quit) {
@@ -253,25 +279,23 @@ int main(int argc, char* argv[]) {
 
                     // user presses key
                     else if (e.type == SDL_KEYDOWN) {
-                        switch (e.key.keysym.sym) {
-                            case SDLK_q:
-                                r += 32;
-                                break;
-                            case SDLK_w:
-                                g += 32;
-                                break;
-                            case SDLK_e:
-                                b += 32;
-                                break;
-                            case SDLK_a:
-                                r -= 32;
-                                break;
-                            case SDLK_s:
-                                g -= 32;
-                                break;
-                            case SDLK_d:
-                                b -= 32;
-                                break;
+                        // increase alpha on w
+                        if (e.key.keysym.sym == SDLK_w) {
+                            // cap if over 255
+                            if (a + 32 > 255) {
+                                a = 255;
+                            } else {  // increment otherwise
+                                a += 32;
+                            }
+                        }
+                        // decrease alpha on s
+                        else if (e.key.keysym.sym == SDLK_s) {
+                            // cap if below 0
+                            if (a - 32 < 0) {
+                                a = 0;
+                            } else {  // decrement otherwise
+                                a -= 32;
+                            }
                         }
                     }
                 }
@@ -280,8 +304,11 @@ int main(int argc, char* argv[]) {
                 SDL_SetRenderDrawColor(gRenderer, 255, 255, 255, 255);
                 SDL_RenderClear(gRenderer);
 
+                // render background texture
+                gBackgroundTexture.render(0, 0);
+
                 // modulate and render texture
-                gModulatedTexture.setColor(r, g, b);
+                gModulatedTexture.setAlpha(a);
                 gModulatedTexture.render(0, 0);
 
                 // update the screen
