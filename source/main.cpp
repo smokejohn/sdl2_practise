@@ -1,10 +1,23 @@
 #include <SDL.h>
 #include <SDL_image.h>
-#include <SDL_ttf.h>
+#include <SDL_mouse.h>
 
 #include <cmath>
 #include <iostream>
 #include <string>
+
+// button constants
+const int BUTTON_WIDTH = 300;
+const int BUTTON_HEIGHT = 200;
+const int TOTAL_BUTTONS = 4;
+
+enum LButtonSprite {
+    BUTTON_SPRITE_MOUSE_OUT,
+    BUTTON_SPRITE_MOUSE_OVER_MOTION,
+    BUTTON_SPRITE_MOUSE_DOWN,
+    BUTTON_SPRITE_MOUSE_UP,
+    BUTTON_SPRITE_TOTAL
+};
 
 // texture wrapper class
 class LTexture {
@@ -18,8 +31,10 @@ class LTexture {
     // loads image at specified path
     bool loadFromFile(std::string path);
 
+#if defined(SDL_TTF_MAJOR_VERSION)
     // creates image from font string
     bool loadFromRenderedText(std::string textureText, SDL_Color textColor);
+#endif
 
     // deallocates texture
     void free();
@@ -50,6 +65,29 @@ class LTexture {
     int mHeight;
 };
 
+// the mouse button
+class LButton {
+   public:
+    // initializes internal variables
+    LButton();
+
+    // sets top left position
+    void setPosition(int x, int y);
+
+    // handles mouse events
+    void handleEvent(SDL_Event* e);
+
+    // show button sprite
+    void render();
+
+   private:
+    // top left position
+    SDL_Point mPosition;
+
+    // currently used global sprite
+    LButtonSprite mCurrentSprite;
+};
+
 // starts up SDL and creates a window
 bool init();
 // loads media
@@ -63,11 +101,11 @@ SDL_Texture* loadTexture(std::string path);
 // the window we will be rendering to
 SDL_Window* gWindow = NULL;
 
-// globally used font
-TTF_Font* gFont = NULL;
-
 // textures
-LTexture gTextTexture;
+LTexture gButtonSpriteSheetTexture;
+SDL_Rect gSpriteClips[BUTTON_SPRITE_TOTAL];
+
+LButton gButtons[TOTAL_BUTTONS];
 
 // the window renderer
 SDL_Renderer* gRenderer = NULL;
@@ -120,6 +158,8 @@ bool LTexture::loadFromFile(std::string path) {
     mTexture = newTexture;
     return mTexture != NULL;
 }
+
+#if defined(SDL_TTF_MAJOR_VERSION)
 bool LTexture::loadFromRenderedText(std::string textureText, SDL_Color textColor) {
     // get rid of preexisting texture
     free();
@@ -146,6 +186,7 @@ bool LTexture::loadFromRenderedText(std::string textureText, SDL_Color textColor
     // return success
     return mTexture != NULL;
 }
+#endif
 
 void LTexture::free() {
     // free texture if it exists
@@ -189,6 +230,65 @@ int LTexture::getWidth() { return mWidth; }
 
 int LTexture::getHeight() { return mHeight; }
 
+LButton::LButton() {
+    mPosition.x = 0;
+    mPosition.y = 0;
+
+    mCurrentSprite = BUTTON_SPRITE_MOUSE_OUT;
+}
+
+void LButton::setPosition(int x, int y) {
+    mPosition.x = x;
+    mPosition.y = y;
+}
+
+void LButton::handleEvent(SDL_Event* e) {
+    // if mouse event happened
+    if (e->type == SDL_MOUSEMOTION || e->type == SDL_MOUSEBUTTONDOWN || e->type == SDL_MOUSEBUTTONUP) {
+        // get mouse position
+        int x, y;
+        SDL_GetMouseState(&x, &y);
+
+        // check if mouse is in button
+        bool inside = true;
+
+        // mouse is left of the button
+        if (x < mPosition.x) inside = false;
+        // mouse is right of the button
+        else if (x > mPosition.x + BUTTON_WIDTH)
+            inside = false;
+        // mouse is above the button
+        else if (y < mPosition.y)
+            inside = false;
+        // mouse is below the button
+        else if (y > mPosition.y + BUTTON_HEIGHT)
+            inside = false;
+
+        // mouse is outside button
+        if (!inside) {
+            mCurrentSprite = BUTTON_SPRITE_MOUSE_OUT;
+        } else {
+            // set mouse over sprite
+            switch (e->type) {
+                case SDL_MOUSEMOTION:
+                    mCurrentSprite = BUTTON_SPRITE_MOUSE_OVER_MOTION;
+                    break;
+                case SDL_MOUSEBUTTONDOWN:
+                    mCurrentSprite = BUTTON_SPRITE_MOUSE_DOWN;
+                    break;
+                case SDL_MOUSEBUTTONUP:
+                    mCurrentSprite = BUTTON_SPRITE_MOUSE_UP;
+                    break;
+            }
+        }
+    }
+}
+
+void LButton::render() {
+    // show current button sprite
+    gButtonSpriteSheetTexture.render(mPosition.x, mPosition.y, &gSpriteClips[mCurrentSprite]);
+}
+
 bool init() {
     // initalization flag
     bool success = true;
@@ -221,10 +321,10 @@ bool init() {
                 }
 
                 // initialize SDL_ttf
-                if (TTF_Init() == -1) {
-                    std::cout << "SDL_ttf could not initialize! SDL_ttf Error: " << TTF_GetError() << "\n";
-                    success = false;
-                }
+                //if (TTF_Init() == -1) {
+                //    std::cout << "SDL_ttf could not initialize! SDL_ttf Error: " << TTF_GetError() << "\n";
+                //    success = false;
+                //}
             }
         }
     }
@@ -236,18 +336,21 @@ bool loadMedia() {
     // loading success flag
     bool success = true;
 
-    // open the font
-    gFont = TTF_OpenFont("./resources/lazy.ttf", 28);
-    if (gFont == NULL) {
-        std::cout << "Failed to load lazy font! SDL_ttf Error: " << TTF_GetError() << "\n";
+    if (!gButtonSpriteSheetTexture.loadFromFile("./resources/button.png")) {
+        std::cout << "Unable to load button texture! SDL_Error: " << SDL_GetError() << "\n";
         success = false;
     } else {
-        // render text
-        SDL_Color textColor = {0, 0, 0};
-        if (!gTextTexture.loadFromRenderedText("The quick brown fox jumps over the lazy dog", textColor)) {
-            std::cout << "Failed to render text texture!\n";
-            success = false;
-        }
+        // set sprite clips
+        gSpriteClips[0] = {0, 0, 300, 200};
+        gSpriteClips[1] = {0, 200, 300, 200};
+        gSpriteClips[2] = {0, 400, 300, 200};
+        gSpriteClips[3] = {0, 600, 300, 200};
+
+        // init button positions
+        gButtons[0].setPosition(0, 0);
+        gButtons[1].setPosition(300, 0);
+        gButtons[2].setPosition(0, 200);
+        gButtons[3].setPosition(300, 200);
     }
 
     return success;
@@ -255,11 +358,7 @@ bool loadMedia() {
 
 void close() {
     // free loaded images
-    gTextTexture.free();
-
-    // free global font
-    TTF_CloseFont(gFont);
-    gFont = NULL;
+    gButtonSpriteSheetTexture.free();
 
     // destroy window
     SDL_DestroyRenderer(gRenderer);
@@ -270,7 +369,7 @@ void close() {
     // quit SDL subsystems
     IMG_Quit();
     SDL_Quit();
-    TTF_Quit();
+    //TTF_Quit();
 }
 
 SDL_Texture* loadTexture(std::string path) {
@@ -318,15 +417,19 @@ int main(int argc, char* argv[]) {
                     if (e.type == SDL_QUIT) {
                         quit = true;
                     }
+
+                    for (int i = 0; i < TOTAL_BUTTONS; i++) {
+                        gButtons[i].handleEvent(&e);
+                    }
                 }
 
                 // clear screen
                 SDL_SetRenderDrawColor(gRenderer, 255, 255, 255, 255);
                 SDL_RenderClear(gRenderer);
 
-                // render text
-                gTextTexture.render((SCREEN_WIDTH - gTextTexture.getWidth()) / 2,
-                                    (SCREEN_HEIGHT - gTextTexture.getHeight()) / 2);
+                for (int i = 0; i < TOTAL_BUTTONS; i++) {
+                    gButtons[i].render();
+                }
 
                 // update the screen
                 SDL_RenderPresent(gRenderer);
