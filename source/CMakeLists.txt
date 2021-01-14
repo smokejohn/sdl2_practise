@@ -7,6 +7,7 @@ message("${CMAKE_MODULE_PATH}")
 
 find_package(SDL2 REQUIRED)
 find_package(SDL2_image REQUIRED)
+find_package(SDL2_mixer REQUIRED)
 # find_package(SDL2_ttf REQUIRED)
 
 set(Sources
@@ -19,7 +20,8 @@ add_executable(sdl2test
 
 target_link_libraries(sdl2test 
     PRIVATE SDL2::SDL2 
-    PRIVATE SDL2_image)
+    PRIVATE SDL2_image
+    PRIVATE SDL2_mixer)
     # PRIVATE SDL2_ttf)
 
 # custom command to copy resource files to build directory later

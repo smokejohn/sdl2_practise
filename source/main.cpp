@@ -1,8 +1,7 @@
 #include <SDL.h>
 #include <SDL_image.h>
-#include <SDL_mouse.h>
+#include <SDL_mixer.h>
 
-#include <cmath>
 #include <iostream>
 #include <string>
 
@@ -66,7 +65,7 @@ SDL_Texture* loadTexture(std::string path);
 SDL_Window* gWindow = NULL;
 
 // textures
-LTexture gRumbleSplashTexture;
+LTexture gSoundPromptTexture;
 
 // the window renderer
 SDL_Renderer* gRenderer = NULL;
@@ -74,11 +73,14 @@ SDL_Renderer* gRenderer = NULL;
 const int SCREEN_WIDTH = 640;
 const int SCREEN_HEIGHT = 480;
 
-const int JOYSTICK_DEAD_ZONE = 8000;
+// the music that will be played
+Mix_Music* gMusic = NULL;
 
-// game controller 1 handler
-SDL_Joystick* gGameController = NULL;
-SDL_Haptic* gControllerHaptic = NULL;
+// the sound effects that will be played
+Mix_Chunk* gScratch = NULL;
+Mix_Chunk* gHigh = NULL;
+Mix_Chunk* gMedium = NULL;
+Mix_Chunk* gLow = NULL;
 
 LTexture::LTexture() {
     // initialize
@@ -202,35 +204,13 @@ bool init() {
     bool success = true;
 
     // initialize SDL
-    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_JOYSTICK | SDL_INIT_HAPTIC) < 0) {
+    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) < 0) {
         std::cout << "SDL could not initialize! SDL_Error: " << SDL_GetError() << "\n";
         success = false;
     } else {
         // set texture filtering to linear
         if (!SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "1")) {
             std::cout << "Warning: Linear texture filtering not enabled!\n";
-        }
-
-        // check for joysticks
-        if (SDL_NumJoysticks() < 1) {
-            std::cout << "Warning: no joysticks connected!\n";
-        } else {
-            // load joystick
-            gGameController = SDL_JoystickOpen(0);
-            if (gGameController == NULL) {
-                std::cout << "Warning: Unable to open game controller! SDL Error: " << SDL_GetError() << "\n";
-            } else {
-                // get contoller haptic device
-                gControllerHaptic = SDL_HapticOpenFromJoystick(gGameController);
-                if (gControllerHaptic == NULL) {
-                    std::cout << "Warning: Controller doesn't support haptics! SDL Error: " << SDL_GetError() << "\n";
-                } else {
-                    // init rumble
-                    if (SDL_HapticRumbleInit(gControllerHaptic) < 0) {
-                        std::cout << "Warning: Unable to intialize rumble! SDL Error: " << SDL_GetError() << "\n";
-                    }
-                }
-            }
         }
 
         // create window
@@ -255,6 +235,12 @@ bool init() {
                     success = false;
                 }
 
+                // initialize SDL_mixer
+                if (Mix_OpenAudio(44100, MIX_DEFAULT_FORMAT, 2, 2048) < 0) {
+                    std::cout << "SDL_mixer could not initialize! SDL_mixer Error: " << Mix_GetError() << "\n";
+                    success = false;
+                }
+
                 // initialize SDL_ttf
                 // if (TTF_Init() == -1) {
                 //    std::cout << "SDL_ttf could not initialize! SDL_ttf Error: " << TTF_GetError() << "\n";
@@ -271,8 +257,37 @@ bool loadMedia() {
     // loading success flag
     bool success = true;
 
-    if (!gRumbleSplashTexture.loadFromFile("./resources/splash.png")) {
+    if (!gSoundPromptTexture.loadFromFile("./resources/images/prompt.png")) {
         std::cout << "Unable to load texture! SDL_Error: " << SDL_GetError() << "\n";
+        success = false;
+    }
+
+    // load music
+    gMusic = Mix_LoadMUS("./resources/audio/beat.wav");
+    if (gMusic == NULL) {
+        std::cout << "Failed to load beat music! SDL_mixer Error: " << Mix_GetError() << "\n";
+        success = false;
+    }
+
+    // load sound effects
+    gScratch = Mix_LoadWAV("./resources/audio/scratch.wav");
+    if (gScratch == NULL) {
+        std::cout << "Failed to load scratch sound! SDL_mixer Error: " << Mix_GetError() << "\n";
+        success = false;
+    }
+    gHigh = Mix_LoadWAV("./resources/audio/high.wav");
+    if (gHigh == NULL) {
+        std::cout << "Failed to load high sound! SDL_mixer Error: " << Mix_GetError() << "\n";
+        success = false;
+    }
+    gMedium = Mix_LoadWAV("./resources/audio/medium.wav");
+    if (gMedium == NULL) {
+        std::cout << "Failed to load medium sound! SDL_mixer Error: " << Mix_GetError() << "\n";
+        success = false;
+    }
+    gLow = Mix_LoadWAV("./resources/audio/low.wav");
+    if (gLow == NULL) {
+        std::cout << "Failed to load low sound! SDL_mixer Error: " << Mix_GetError() << "\n";
         success = false;
     }
 
@@ -281,15 +296,21 @@ bool loadMedia() {
 
 void close() {
     // free loaded images
-    gRumbleSplashTexture.free();
+    gSoundPromptTexture.free();
 
-    // close game controller
-    SDL_JoystickClose(gGameController);
-    gGameController = NULL;
+    // free the sound effects
+    Mix_FreeChunk(gScratch);
+    Mix_FreeChunk(gHigh);
+    Mix_FreeChunk(gMedium);
+    Mix_FreeChunk(gLow);
+    gScratch = NULL;
+    gHigh = NULL;
+    gMedium = NULL;
+    gLow = NULL;
 
-    // close haptic controller
-    SDL_HapticClose(gControllerHaptic);
-    gControllerHaptic = NULL;
+    // free the music
+    Mix_FreeMusic(gMusic);
+    gMusic = NULL;
 
     // destroy window
     SDL_DestroyRenderer(gRenderer);
@@ -298,31 +319,10 @@ void close() {
     gWindow = NULL;
 
     // quit SDL subsystems
+    Mix_Quit();
     IMG_Quit();
     SDL_Quit();
     // TTF_Quit();
-}
-
-SDL_Texture* loadTexture(std::string path) {
-    // the final texture
-    SDL_Texture* newTexture = NULL;
-
-    // load image at specified path
-    SDL_Surface* loadedSurface = IMG_Load(path.c_str());
-    if (loadedSurface == NULL) {
-        std::cout << "Unable to load image " << path.c_str() << "! SDL_image Error: " << IMG_GetError() << "\n";
-    } else {
-        // create texture from surface pixels
-        newTexture = SDL_CreateTextureFromSurface(gRenderer, loadedSurface);
-        if (newTexture == NULL) {
-            std::cout << "Unable to create texture from " << path.c_str() << "! SDL Error: " << SDL_GetError() << "\n";
-        }
-
-        // get rid of old loaded surface
-        SDL_FreeSurface(loadedSurface);
-    }
-
-    return newTexture;
 }
 
 int main(int argc, char* argv[]) {
@@ -347,10 +347,37 @@ int main(int argc, char* argv[]) {
                     // user requests quit
                     if (e.type == SDL_QUIT) {
                         quit = true;
-                    } else if (e.type == SDL_JOYBUTTONDOWN) {
-                        // play rumble at 75% strenght for 500 milliseconds
-                        if (SDL_HapticRumblePlay(gControllerHaptic, 0.75, 500) != 0) {
-                            std::cout << "Warning: Unable to play rumble! " << SDL_GetError() << "\n";
+                    }
+                    // handle key presses
+                    else if (e.type == SDL_KEYDOWN) {
+                        switch (e.key.keysym.sym) {
+                            case SDLK_1:
+                                Mix_PlayChannel(-1, gHigh, 0);
+                                break;
+                            case SDLK_2:
+                                Mix_PlayChannel(-1, gMedium, 0);
+                                break;
+                            case SDLK_3:
+                                Mix_PlayChannel(-1, gLow, 0);
+                                break;
+                            case SDLK_4:
+                                Mix_PlayChannel(-1, gScratch, 0);
+                                break;
+                            case SDLK_9:
+                                if (Mix_PlayingMusic() == 0) {
+                                    Mix_PlayMusic(gMusic, -1);
+                                } else {
+                                    if (Mix_PausedMusic() == 1) {
+                                        Mix_ResumeMusic();
+                                    } else {
+                                        Mix_PauseMusic();
+                                    }
+                                }
+                                break;
+
+                            case SDLK_0:
+                                Mix_HaltMusic();
+                                break;
                         }
                     }
                 }
@@ -359,7 +386,7 @@ int main(int argc, char* argv[]) {
                 SDL_SetRenderDrawColor(gRenderer, 255, 255, 255, 255);
                 SDL_RenderClear(gRenderer);
 
-                gRumbleSplashTexture.render(0, 0);
+                gSoundPromptTexture.render(0, 0);
 
                 // update the screen
                 SDL_RenderPresent(gRenderer);
@@ -372,3 +399,26 @@ int main(int argc, char* argv[]) {
 
     return 0;
 }
+
+SDL_Texture* loadTexture(std::string path) {
+    // the final texture
+    SDL_Texture* newTexture = NULL;
+
+    // load image at specified path
+    SDL_Surface* loadedSurface = IMG_Load(path.c_str());
+    if (loadedSurface == NULL) {
+        std::cout << "Unable to load image " << path.c_str() << "! SDL_image Error: " << IMG_GetError() << "\n";
+    } else {
+        // create texture from surface pixels
+        newTexture = SDL_CreateTextureFromSurface(gRenderer, loadedSurface);
+        if (newTexture == NULL) {
+            std::cout << "Unable to create texture from " << path.c_str() << "! SDL Error: " << SDL_GetError() << "\n";
+        }
+
+        // get rid of old loaded surface
+        SDL_FreeSurface(loadedSurface);
+    }
+
+    return newTexture;
+}
+
