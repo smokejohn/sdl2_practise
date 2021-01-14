@@ -66,7 +66,7 @@ SDL_Texture* loadTexture(std::string path);
 SDL_Window* gWindow = NULL;
 
 // textures
-LTexture gArrowTexture;
+LTexture gRumbleSplashTexture;
 
 // the window renderer
 SDL_Renderer* gRenderer = NULL;
@@ -78,6 +78,7 @@ const int JOYSTICK_DEAD_ZONE = 8000;
 
 // game controller 1 handler
 SDL_Joystick* gGameController = NULL;
+SDL_Haptic* gControllerHaptic = NULL;
 
 LTexture::LTexture() {
     // initialize
@@ -201,7 +202,7 @@ bool init() {
     bool success = true;
 
     // initialize SDL
-    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_JOYSTICK) < 0) {
+    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_JOYSTICK | SDL_INIT_HAPTIC) < 0) {
         std::cout << "SDL could not initialize! SDL_Error: " << SDL_GetError() << "\n";
         success = false;
     } else {
@@ -218,6 +219,17 @@ bool init() {
             gGameController = SDL_JoystickOpen(0);
             if (gGameController == NULL) {
                 std::cout << "Warning: Unable to open game controller! SDL Error: " << SDL_GetError() << "\n";
+            } else {
+                // get contoller haptic device
+                gControllerHaptic = SDL_HapticOpenFromJoystick(gGameController);
+                if (gControllerHaptic == NULL) {
+                    std::cout << "Warning: Controller doesn't support haptics! SDL Error: " << SDL_GetError() << "\n";
+                } else {
+                    // init rumble
+                    if (SDL_HapticRumbleInit(gControllerHaptic) < 0) {
+                        std::cout << "Warning: Unable to intialize rumble! SDL Error: " << SDL_GetError() << "\n";
+                    }
+                }
             }
         }
 
@@ -259,7 +271,7 @@ bool loadMedia() {
     // loading success flag
     bool success = true;
 
-    if (!gArrowTexture.loadFromFile("./resources/arrow.png")) {
+    if (!gRumbleSplashTexture.loadFromFile("./resources/splash.png")) {
         std::cout << "Unable to load texture! SDL_Error: " << SDL_GetError() << "\n";
         success = false;
     }
@@ -269,11 +281,15 @@ bool loadMedia() {
 
 void close() {
     // free loaded images
-    gArrowTexture.free();
+    gRumbleSplashTexture.free();
 
     // close game controller
     SDL_JoystickClose(gGameController);
     gGameController = NULL;
+
+    // close haptic controller
+    SDL_HapticClose(gControllerHaptic);
+    gControllerHaptic = NULL;
 
     // destroy window
     SDL_DestroyRenderer(gRenderer);
@@ -324,10 +340,6 @@ int main(int argc, char* argv[]) {
             // event handler
             SDL_Event e;
 
-            // normalized direction
-            int xDir = 0;
-            int yDir = 0;
-
             // while application is running
             while (!quit) {
                 // handle events on queue
@@ -335,29 +347,10 @@ int main(int argc, char* argv[]) {
                     // user requests quit
                     if (e.type == SDL_QUIT) {
                         quit = true;
-                    } else if (e.type == SDL_JOYAXISMOTION) {
-                        // motion on controller 0
-                        if (e.jaxis.which == 0) {
-                            // x axis motion
-                            if (e.jaxis.axis == 0) {
-                                // left of dead zone
-                                if (e.jaxis.value < -JOYSTICK_DEAD_ZONE) xDir = -1;
-                                // righ of dead zone
-                                else if (e.jaxis.value > JOYSTICK_DEAD_ZONE)
-                                    xDir = 1;
-                                else
-                                    xDir = 0;
-                            }
-                            // y axis motion
-                            else if (e.jaxis.axis == 1) {
-                                // below dead zone
-                                if (e.jaxis.value < -JOYSTICK_DEAD_ZONE) yDir = -1;
-                                // above dead zone
-                                else if (e.jaxis.value > JOYSTICK_DEAD_ZONE)
-                                    yDir = 1;
-                                else
-                                    yDir = 0;
-                            }
+                    } else if (e.type == SDL_JOYBUTTONDOWN) {
+                        // play rumble at 75% strenght for 500 milliseconds
+                        if (SDL_HapticRumblePlay(gControllerHaptic, 0.75, 500) != 0) {
+                            std::cout << "Warning: Unable to play rumble! " << SDL_GetError() << "\n";
                         }
                     }
                 }
@@ -366,14 +359,7 @@ int main(int argc, char* argv[]) {
                 SDL_SetRenderDrawColor(gRenderer, 255, 255, 255, 255);
                 SDL_RenderClear(gRenderer);
 
-                // calculate angle
-                double joystickAngle = atan2((double)yDir, (double)xDir) * (180.0 / M_PI);
-
-                // correct angle
-                if (xDir == 0 && yDir == 0) joystickAngle = 0;
-
-                // render joystick 8 way angle
-                gArrowTexture.render((SCREEN_WIDTH - gArrowTexture.getWidth())/2, (SCREEN_HEIGHT - gArrowTexture.getHeight())/2, NULL, joystickAngle);
+                gRumbleSplashTexture.render(0, 0);
 
                 // update the screen
                 SDL_RenderPresent(gRenderer);
