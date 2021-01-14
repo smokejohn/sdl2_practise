@@ -52,7 +52,6 @@ class LTexture {
     int mHeight;
 };
 
-
 // starts up SDL and creates a window
 bool init();
 // loads media
@@ -67,13 +66,18 @@ SDL_Texture* loadTexture(std::string path);
 SDL_Window* gWindow = NULL;
 
 // textures
-LTexture gUpTexture, gDownTexture, gLeftTexture, gRightTexture, gPressTexture;
+LTexture gArrowTexture;
 
 // the window renderer
 SDL_Renderer* gRenderer = NULL;
 
 const int SCREEN_WIDTH = 640;
 const int SCREEN_HEIGHT = 480;
+
+const int JOYSTICK_DEAD_ZONE = 8000;
+
+// game controller 1 handler
+SDL_Joystick* gGameController = NULL;
 
 LTexture::LTexture() {
     // initialize
@@ -197,10 +201,26 @@ bool init() {
     bool success = true;
 
     // initialize SDL
-    if (SDL_Init(SDL_INIT_VIDEO) < 0) {
+    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_JOYSTICK) < 0) {
         std::cout << "SDL could not initialize! SDL_Error: " << SDL_GetError() << "\n";
         success = false;
     } else {
+        // set texture filtering to linear
+        if (!SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "1")) {
+            std::cout << "Warning: Linear texture filtering not enabled!\n";
+        }
+
+        // check for joysticks
+        if (SDL_NumJoysticks() < 1) {
+            std::cout << "Warning: no joysticks connected!\n";
+        } else {
+            // load joystick
+            gGameController = SDL_JoystickOpen(0);
+            if (gGameController == NULL) {
+                std::cout << "Warning: Unable to open game controller! SDL Error: " << SDL_GetError() << "\n";
+            }
+        }
+
         // create window
         gWindow = SDL_CreateWindow("SDL Test", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, SCREEN_WIDTH,
                                    SCREEN_HEIGHT, SDL_WINDOW_SHOWN);
@@ -239,37 +259,21 @@ bool loadMedia() {
     // loading success flag
     bool success = true;
 
-    if (!gDownTexture.loadFromFile("./resources/down.png")) {
+    if (!gArrowTexture.loadFromFile("./resources/arrow.png")) {
         std::cout << "Unable to load texture! SDL_Error: " << SDL_GetError() << "\n";
         success = false;
-    } 
-    if (!gUpTexture.loadFromFile("./resources/up.png")) {
-        std::cout << "Unable to load texture! SDL_Error: " << SDL_GetError() << "\n";
-        success = false;
-    } 
-    if (!gLeftTexture.loadFromFile("./resources/left.png")) {
-        std::cout << "Unable to load texture! SDL_Error: " << SDL_GetError() << "\n";
-        success = false;
-    } 
-    if (!gRightTexture.loadFromFile("./resources/right.png")) {
-        std::cout << "Unable to load texture! SDL_Error: " << SDL_GetError() << "\n";
-        success = false;
-    } 
-    if (!gPressTexture.loadFromFile("./resources/press.png")) {
-        std::cout << "Unable to load texture! SDL_Error: " << SDL_GetError() << "\n";
-        success = false;
-    } 
+    }
 
     return success;
 }
 
 void close() {
     // free loaded images
-    gDownTexture.free();
-    gUpTexture.free();
-    gLeftTexture.free();
-    gRightTexture.free();
-    gPressTexture.free();
+    gArrowTexture.free();
+
+    // close game controller
+    SDL_JoystickClose(gGameController);
+    gGameController = NULL;
 
     // destroy window
     SDL_DestroyRenderer(gRenderer);
@@ -320,8 +324,9 @@ int main(int argc, char* argv[]) {
             // event handler
             SDL_Event e;
 
-            // current rendered texture
-            LTexture* currentTexture = NULL;
+            // normalized direction
+            int xDir = 0;
+            int yDir = 0;
 
             // while application is running
             while (!quit) {
@@ -330,23 +335,45 @@ int main(int argc, char* argv[]) {
                     // user requests quit
                     if (e.type == SDL_QUIT) {
                         quit = true;
+                    } else if (e.type == SDL_JOYAXISMOTION) {
+                        // motion on controller 0
+                        if (e.jaxis.which == 0) {
+                            // x axis motion
+                            if (e.jaxis.axis == 0) {
+                                // left of dead zone
+                                if (e.jaxis.value < -JOYSTICK_DEAD_ZONE) xDir = -1;
+                                // righ of dead zone
+                                else if (e.jaxis.value > JOYSTICK_DEAD_ZONE)
+                                    xDir = 1;
+                                else
+                                    xDir = 0;
+                            }
+                            // y axis motion
+                            else if (e.jaxis.axis == 1) {
+                                // below dead zone
+                                if (e.jaxis.value < -JOYSTICK_DEAD_ZONE) yDir = -1;
+                                // above dead zone
+                                else if (e.jaxis.value > JOYSTICK_DEAD_ZONE)
+                                    yDir = 1;
+                                else
+                                    yDir = 0;
+                            }
+                        }
                     }
-
-                    // set texture based on current keystate
-                    const Uint8* currentKeyStates = SDL_GetKeyboardState(NULL);
-                    if (currentKeyStates[SDL_SCANCODE_UP]) currentTexture = &gUpTexture;
-                    else if (currentKeyStates[SDL_SCANCODE_DOWN]) currentTexture = &gDownTexture;
-                    else if (currentKeyStates[SDL_SCANCODE_LEFT]) currentTexture = &gLeftTexture;
-                    else if (currentKeyStates[SDL_SCANCODE_RIGHT]) currentTexture = &gRightTexture;
-                    else currentTexture = &gPressTexture;
                 }
 
                 // clear screen
                 SDL_SetRenderDrawColor(gRenderer, 255, 255, 255, 255);
                 SDL_RenderClear(gRenderer);
 
-                // render current texture
-                currentTexture->render(0,0);
+                // calculate angle
+                double joystickAngle = atan2((double)yDir, (double)xDir) * (180.0 / M_PI);
+
+                // correct angle
+                if (xDir == 0 && yDir == 0) joystickAngle = 0;
+
+                // render joystick 8 way angle
+                gArrowTexture.render((SCREEN_WIDTH - gArrowTexture.getWidth())/2, (SCREEN_HEIGHT - gArrowTexture.getHeight())/2, NULL, joystickAngle);
 
                 // update the screen
                 SDL_RenderPresent(gRenderer);
