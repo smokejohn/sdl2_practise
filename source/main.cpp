@@ -7,6 +7,119 @@
 #include <sstream>
 #include <string>
 
+// the application time based timer
+class LTimer {
+   public:
+    // initializes variables
+    LTimer();
+
+    // the various clock actions
+    void start();
+    void stop();
+    void pause();
+    void unpause();
+
+    // gets the timer's time
+    Uint32 getTicks();
+
+    // checks the status of the timer
+    bool isStarted();
+    bool isPaused();
+
+   private:
+    // the click time when the timer started
+    Uint32 mStartTicks;
+
+    // the ticks stored when the timer is paused
+    Uint32 mPausedTicks;
+
+    // the timer status
+    bool mPaused;
+    bool mStarted;
+};
+
+LTimer::LTimer() {
+    // initialize the variables
+    mStartTicks = 0;
+    mPausedTicks = 0;
+
+    mPaused = false;
+    mStarted = false;
+}
+
+void LTimer::start() {
+    // start the timer
+    mStarted = true;
+
+    // unpause the timer
+    mPaused = false;
+
+    // get the current clock time
+    mStartTicks = SDL_GetTicks();
+    mPausedTicks = 0;
+}
+
+void LTimer::stop() {
+    // stop the timer
+    mStarted = false;
+
+    // unpause the timer
+    mPaused = false;
+
+    // clear tick variables
+    mStartTicks = 0;
+    mPausedTicks = 0;
+}
+
+void LTimer::pause() {
+    // if the timer is running and isn't already paused
+    if (mStarted && !mPaused) {
+        // pause the timer
+        mPaused = true;
+
+        // calculate the pased ticks
+        mPausedTicks = SDL_GetTicks() - mStartTicks;
+        mStartTicks = 0;
+    }
+}
+
+void LTimer::unpause() {
+    // if the timer is running and paused
+    if (mStarted && mPaused) {
+        // unpause the timer
+        mPaused = false;
+
+        // reset the starting ticks
+        mStartTicks = SDL_GetTicks() - mPausedTicks;
+
+        // reset the paused ticks
+        mPausedTicks = 0;
+    }
+}
+
+Uint32 LTimer::getTicks() {
+    // the actual timer time
+    Uint32 time = 0;
+
+    // if the timer is running
+    if (mStarted) {
+        // if the timer is paused
+        if (mPaused) {
+            // return the number of ticks when the timer was paused
+            time = mPausedTicks;
+        } else {
+            // return the current time minus the start time
+            time = SDL_GetTicks() - mStartTicks;
+        }
+    }
+
+    return time;
+}
+
+bool LTimer::isStarted() { return mStarted; }
+
+bool LTimer::isPaused() { return mPaused; }
+
 // texture wrapper class
 class LTexture {
    public:
@@ -76,7 +189,8 @@ const int SCREEN_HEIGHT = 480;
 TTF_Font* gFont;
 
 // prompt texture
-LTexture gPromptTexture;
+LTexture gStartPromptTexture;
+LTexture gPausePromptTexture;
 LTexture gTimeTextTexture;
 
 LTexture::LTexture() {
@@ -264,8 +378,12 @@ bool loadMedia() {
         SDL_Color textColor = {0, 0, 0, 255};
 
         // load prompt texture
-        if (!gPromptTexture.loadFromRenderedText("Press Enter to Reset Start Time.", textColor)) {
-            std::cout << "Unable to render prompt texture!\n";
+        if (!gStartPromptTexture.loadFromRenderedText("Press S to Start or Stop the Timer.", textColor)) {
+            std::cout << "Unable to render start prompt texture!\n";
+            success = false;
+        }
+        if (!gPausePromptTexture.loadFromRenderedText("Press P to Pause or Unpause the Timer.", textColor)) {
+            std::cout << "Unable to render pause prompt texture!\n";
             success = false;
         }
     }
@@ -275,7 +393,8 @@ bool loadMedia() {
 
 void close() {
     // free loaded images
-    gPromptTexture.free();
+    gStartPromptTexture.free();
+    gPausePromptTexture.free();
     gTimeTextTexture.free();
 
     // destroy window
@@ -309,8 +428,8 @@ int main(int argc, char* argv[]) {
             // set text color as black
             SDL_Color textColor = {0, 0, 0, 255};
 
-            // current time start time
-            Uint32 startTime = 0;
+            // the application timer
+            LTimer timer;
 
             // in memory text stream
             std::stringstream timeText;
@@ -324,14 +443,26 @@ int main(int argc, char* argv[]) {
                         quit = true;
                     }
 
-                    // reset start time on return keypress
-                    else if (e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_RETURN) {
-                        startTime = SDL_GetTicks();
+                    else if (e.type == SDL_KEYDOWN) {
+                        // start/stop
+                        if (e.key.keysym.sym == SDLK_s) {
+                            if (timer.isStarted())
+                                timer.stop();
+                            else
+                                timer.start();
+                        }
+                        // pause/unpause
+                        else if (e.key.keysym.sym == SDLK_p) {
+                            if (timer.isPaused())
+                                timer.unpause();
+                            else
+                                timer.pause();
+                        }
                     }
                 }
                 // set text to be rendered
                 timeText.str("");
-                timeText << "Milliseconds since start time " << SDL_GetTicks() - startTime;
+                timeText << "Milliseconds since start time " << (timer.getTicks() / 1000.f);
 
                 // render text
                 if (!gTimeTextTexture.loadFromRenderedText(timeText.str().c_str(), textColor)) {
@@ -342,9 +473,10 @@ int main(int argc, char* argv[]) {
                 SDL_SetRenderDrawColor(gRenderer, 255, 255, 255, 255);
                 SDL_RenderClear(gRenderer);
 
-                gPromptTexture.render((SCREEN_WIDTH - gPromptTexture.getWidth()) / 2, 0);
+                gStartPromptTexture.render((SCREEN_WIDTH - gStartPromptTexture.getWidth())/2, 0);
+                gPausePromptTexture.render((SCREEN_WIDTH - gPausePromptTexture.getWidth()) / 2, gStartPromptTexture.getHeight());
                 gTimeTextTexture.render((SCREEN_WIDTH - gTimeTextTexture.getWidth()) / 2,
-                                        (SCREEN_HEIGHT - gPromptTexture.getHeight()) / 2);
+                                        (SCREEN_HEIGHT - gTimeTextTexture.getHeight()) / 2);
 
                 // update the screen
                 SDL_RenderPresent(gRenderer);
