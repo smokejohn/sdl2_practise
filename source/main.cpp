@@ -189,8 +189,6 @@ const int SCREEN_HEIGHT = 480;
 TTF_Font* gFont;
 
 // prompt texture
-LTexture gStartPromptTexture;
-LTexture gPausePromptTexture;
 LTexture gTimeTextTexture;
 
 LTexture::LTexture() {
@@ -376,16 +374,6 @@ bool loadMedia() {
     } else {
         // set text color as black
         SDL_Color textColor = {0, 0, 0, 255};
-
-        // load prompt texture
-        if (!gStartPromptTexture.loadFromRenderedText("Press S to Start or Stop the Timer.", textColor)) {
-            std::cout << "Unable to render start prompt texture!\n";
-            success = false;
-        }
-        if (!gPausePromptTexture.loadFromRenderedText("Press P to Pause or Unpause the Timer.", textColor)) {
-            std::cout << "Unable to render pause prompt texture!\n";
-            success = false;
-        }
     }
 
     return success;
@@ -393,8 +381,6 @@ bool loadMedia() {
 
 void close() {
     // free loaded images
-    gStartPromptTexture.free();
-    gPausePromptTexture.free();
     gTimeTextTexture.free();
 
     // destroy window
@@ -429,10 +415,14 @@ int main(int argc, char* argv[]) {
             SDL_Color textColor = {0, 0, 0, 255};
 
             // the application timer
-            LTimer timer;
+            LTimer fpsTimer;
 
             // in memory text stream
             std::stringstream timeText;
+
+            // start ocunting frames per second
+            int countedFrames = 0;
+            fpsTimer.start();
 
             // while application is running
             while (!quit) {
@@ -442,27 +432,17 @@ int main(int argc, char* argv[]) {
                     if (e.type == SDL_QUIT) {
                         quit = true;
                     }
-
-                    else if (e.type == SDL_KEYDOWN) {
-                        // start/stop
-                        if (e.key.keysym.sym == SDLK_s) {
-                            if (timer.isStarted())
-                                timer.stop();
-                            else
-                                timer.start();
-                        }
-                        // pause/unpause
-                        else if (e.key.keysym.sym == SDLK_p) {
-                            if (timer.isPaused())
-                                timer.unpause();
-                            else
-                                timer.pause();
-                        }
-                    }
                 }
+
+                // calculate and correct fps
+                float avgFPS = countedFrames / (fpsTimer.getTicks() / 1000.f);
+                if (avgFPS > 2000000) {
+                    avgFPS = 0;
+                }
+
                 // set text to be rendered
                 timeText.str("");
-                timeText << "Milliseconds since start time " << (timer.getTicks() / 1000.f);
+                timeText << "Average Frames Per Second " << avgFPS;
 
                 // render text
                 if (!gTimeTextTexture.loadFromRenderedText(timeText.str().c_str(), textColor)) {
@@ -473,13 +453,14 @@ int main(int argc, char* argv[]) {
                 SDL_SetRenderDrawColor(gRenderer, 255, 255, 255, 255);
                 SDL_RenderClear(gRenderer);
 
-                gStartPromptTexture.render((SCREEN_WIDTH - gStartPromptTexture.getWidth())/2, 0);
-                gPausePromptTexture.render((SCREEN_WIDTH - gPausePromptTexture.getWidth()) / 2, gStartPromptTexture.getHeight());
                 gTimeTextTexture.render((SCREEN_WIDTH - gTimeTextTexture.getWidth()) / 2,
                                         (SCREEN_HEIGHT - gTimeTextTexture.getHeight()) / 2);
 
                 // update the screen
                 SDL_RenderPresent(gRenderer);
+
+                // increase frame count
+                ++countedFrames;
             }
         }
     }
