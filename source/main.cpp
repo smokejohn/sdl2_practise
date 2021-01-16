@@ -182,8 +182,11 @@ SDL_Window* gWindow = NULL;
 // the window renderer
 SDL_Renderer* gRenderer = NULL;
 
+// screen dimension constants
 const int SCREEN_WIDTH = 640;
 const int SCREEN_HEIGHT = 480;
+const int SCREEN_FPS = 60;
+const int SCREEN_TICKS_PER_FRAME = 1000 / SCREEN_FPS;
 
 // font
 TTF_Font* gFont;
@@ -330,7 +333,7 @@ bool init() {
             success = false;
         } else {
             // create vsynced renderer for window
-            gRenderer = SDL_CreateRenderer(gWindow, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
+            gRenderer = SDL_CreateRenderer(gWindow, -1, SDL_RENDERER_ACCELERATED);
             if (gRenderer == NULL) {
                 std::cout << "Renderer could not be created! SDL Error: " << SDL_GetError() << "\n";
                 success = false;
@@ -414,8 +417,11 @@ int main(int argc, char* argv[]) {
             // set text color as black
             SDL_Color textColor = {0, 0, 0, 255};
 
-            // the application timer
+            // the frames per second timer
             LTimer fpsTimer;
+
+            // the frames per second cap timer
+            LTimer capTimer;
 
             // in memory text stream
             std::stringstream timeText;
@@ -426,6 +432,10 @@ int main(int argc, char* argv[]) {
 
             // while application is running
             while (!quit) {
+
+                // start cap timer
+                capTimer.start();
+
                 // handle events on queue
                 while (SDL_PollEvent(&e) != 0) {
                     // user requests quit
@@ -442,7 +452,7 @@ int main(int argc, char* argv[]) {
 
                 // set text to be rendered
                 timeText.str("");
-                timeText << "Average Frames Per Second " << avgFPS;
+                timeText << "Average Frames Per Second (With Cap)" << avgFPS;
 
                 // render text
                 if (!gTimeTextTexture.loadFromRenderedText(timeText.str().c_str(), textColor)) {
@@ -461,6 +471,13 @@ int main(int argc, char* argv[]) {
 
                 // increase frame count
                 ++countedFrames;
+
+                // if frame finished early
+                int frameTicks = capTimer.getTicks();
+                if (frameTicks < SCREEN_TICKS_PER_FRAME) {
+                    // wait remaining time
+                    SDL_Delay(SCREEN_TICKS_PER_FRAME - frameTicks);
+                }
             }
         }
     }
