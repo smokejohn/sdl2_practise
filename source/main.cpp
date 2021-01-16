@@ -7,6 +7,36 @@
 #include <sstream>
 #include <string>
 
+// the dot that will move around the screen
+class Dot {
+    public:
+        // the dimensions of the dot
+        static const int DOT_WIDTH = 20;
+        static const int DOT_HEIGHT = 20;
+
+        // maximum axis velocity of the dot
+        static const int DOT_VEL = 10;
+
+        // initalizes the variables
+        Dot();
+
+        // takes key presses and adjusts the dot's velocity
+        void handleEvent(SDL_Event& e);
+
+        // moves the dot
+        void move();
+
+        // shows the dot on the screen
+        void render();
+
+    private:
+        // the x and y offsets of the dot
+        int mPosX, mPosY;
+
+        // the velocity of the dot
+        int mVelX, mVelY;
+};
+
 // the application time based timer
 class LTimer {
    public:
@@ -37,88 +67,6 @@ class LTimer {
     bool mPaused;
     bool mStarted;
 };
-
-LTimer::LTimer() {
-    // initialize the variables
-    mStartTicks = 0;
-    mPausedTicks = 0;
-
-    mPaused = false;
-    mStarted = false;
-}
-
-void LTimer::start() {
-    // start the timer
-    mStarted = true;
-
-    // unpause the timer
-    mPaused = false;
-
-    // get the current clock time
-    mStartTicks = SDL_GetTicks();
-    mPausedTicks = 0;
-}
-
-void LTimer::stop() {
-    // stop the timer
-    mStarted = false;
-
-    // unpause the timer
-    mPaused = false;
-
-    // clear tick variables
-    mStartTicks = 0;
-    mPausedTicks = 0;
-}
-
-void LTimer::pause() {
-    // if the timer is running and isn't already paused
-    if (mStarted && !mPaused) {
-        // pause the timer
-        mPaused = true;
-
-        // calculate the pased ticks
-        mPausedTicks = SDL_GetTicks() - mStartTicks;
-        mStartTicks = 0;
-    }
-}
-
-void LTimer::unpause() {
-    // if the timer is running and paused
-    if (mStarted && mPaused) {
-        // unpause the timer
-        mPaused = false;
-
-        // reset the starting ticks
-        mStartTicks = SDL_GetTicks() - mPausedTicks;
-
-        // reset the paused ticks
-        mPausedTicks = 0;
-    }
-}
-
-Uint32 LTimer::getTicks() {
-    // the actual timer time
-    Uint32 time = 0;
-
-    // if the timer is running
-    if (mStarted) {
-        // if the timer is paused
-        if (mPaused) {
-            // return the number of ticks when the timer was paused
-            time = mPausedTicks;
-        } else {
-            // return the current time minus the start time
-            time = SDL_GetTicks() - mStartTicks;
-        }
-    }
-
-    return time;
-}
-
-bool LTimer::isStarted() { return mStarted; }
-
-bool LTimer::isPaused() { return mPaused; }
 
 // texture wrapper class
 class LTexture {
@@ -182,17 +130,177 @@ SDL_Window* gWindow = NULL;
 // the window renderer
 SDL_Renderer* gRenderer = NULL;
 
+// font
+TTF_Font* gFont;
+
+// prompt texture
+LTexture gDotTexture;
+
 // screen dimension constants
 const int SCREEN_WIDTH = 640;
 const int SCREEN_HEIGHT = 480;
 const int SCREEN_FPS = 60;
 const int SCREEN_TICKS_PER_FRAME = 1000 / SCREEN_FPS;
 
-// font
-TTF_Font* gFont;
+bool init() {
+    // initalization flag
+    bool success = true;
 
-// prompt texture
-LTexture gTimeTextTexture;
+    // initialize SDL
+    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) < 0) {
+        std::cout << "SDL could not initialize! SDL_Error: " << SDL_GetError() << "\n";
+        success = false;
+    } else {
+        // set texture filtering to linear
+        if (!SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "1")) {
+            std::cout << "Warning: Linear texture filtering not enabled!\n";
+        }
+
+        // create window
+        gWindow = SDL_CreateWindow("SDL Test", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, SCREEN_WIDTH,
+                                   SCREEN_HEIGHT, SDL_WINDOW_SHOWN);
+        if (gWindow == NULL) {
+            std::cout << "Window could not be created! " << SDL_GetError() << "\n";
+            success = false;
+        } else {
+            // create vsynced renderer for window
+            gRenderer = SDL_CreateRenderer(gWindow, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
+            if (gRenderer == NULL) {
+                std::cout << "Renderer could not be created! SDL Error: " << SDL_GetError() << "\n";
+                success = false;
+            } else {
+                // initialize renderer color
+
+                // initialize PNG loading
+                int imgFlags = IMG_INIT_PNG;
+                if (!(IMG_Init(imgFlags) & imgFlags)) {
+                    std::cout << "SDL_image could not initialize! SDL_image Eror: " << IMG_GetError() << "\n";
+                    success = false;
+                }
+
+                // initialize SDL_mixer
+                if (Mix_OpenAudio(44100, MIX_DEFAULT_FORMAT, 2, 2048) < 0) {
+                    std::cout << "SDL_mixer could not initialize! SDL_mixer Error: " << Mix_GetError() << "\n";
+                    success = false;
+                }
+
+                // initialize SDL_ttf
+                if (TTF_Init() == -1) {
+                    std::cout << "SDL_ttf could not initialize! SDL_ttf Error: " << TTF_GetError() << "\n";
+                    success = false;
+                }
+            }
+        }
+    }
+
+    return success;
+}
+
+bool loadMedia() {
+    // loading success flag
+    bool success = true;
+
+    if (!gDotTexture.loadFromFile("./resources/images/dot.bmp")) {
+        std::cout << "Unable to load dot texture!\n";
+        success = false;
+    }
+
+    return success;
+}
+
+void close() {
+    // free loaded images
+    gDotTexture.free();
+
+    // destroy window
+    SDL_DestroyRenderer(gRenderer);
+    gRenderer = NULL;
+    SDL_DestroyWindow(gWindow);
+    gWindow = NULL;
+
+    // quit SDL subsystems
+    Mix_Quit();
+    IMG_Quit();
+    SDL_Quit();
+    TTF_Quit();
+}
+
+int main(int argc, char* argv[]) {
+    std::cout << "starting sdltest\n";
+    if (!init()) {
+        std::cout << "Failed to initialize!\n";
+    } else {
+        // load media
+        if (!loadMedia()) {
+            std::cout << "Failed to load media!\n";
+        } else {
+            // main loop flag
+            bool quit = false;
+
+            // event handler
+            SDL_Event e;
+
+            // the dot that will be moving around the screen
+            Dot dot;
+
+            // while application is running
+            while (!quit) {
+
+                // handle events on queue
+                while (SDL_PollEvent(&e) != 0) {
+                    // user requests quit
+                    if (e.type == SDL_QUIT) {
+                        quit = true;
+                    }
+
+                    // handle input for the dot
+                    dot.handleEvent(e);
+                }
+
+                // move the dot
+                dot.move();
+
+                // clear screen
+                SDL_SetRenderDrawColor(gRenderer, 255, 255, 255, 255);
+                SDL_RenderClear(gRenderer);
+
+                // render objects
+                dot.render();
+
+                // update the screen
+                SDL_RenderPresent(gRenderer);
+
+            }
+        }
+    }
+
+    // free resources and close SDL
+    close();
+
+    return 0;
+}
+
+SDL_Texture* loadTexture(std::string path) {
+    // the final texture
+    SDL_Texture* newTexture = NULL;
+
+    // load image at specified path
+    SDL_Surface* loadedSurface = IMG_Load(path.c_str());
+    if (loadedSurface == NULL) {
+        std::cout << "Unable to load image " << path.c_str() << "! SDL_image Error: " << IMG_GetError() << "\n";
+    } else {
+        // create texture from surface pixels
+        newTexture = SDL_CreateTextureFromSurface(gRenderer, loadedSurface);
+        if (newTexture == NULL) {
+            std::cout << "Unable to create texture from " << path.c_str() << "! SDL Error: " << SDL_GetError() << "\n";
+        }
+
+        // get rid of old loaded surface
+        SDL_FreeSurface(loadedSurface);
+    }
+
+    return newTexture;
+}
 
 LTexture::LTexture() {
     // initialize
@@ -310,203 +418,143 @@ void LTexture::render(int x, int y, SDL_Rect* clip, double angle, SDL_Point* cen
 int LTexture::getWidth() { return mWidth; }
 
 int LTexture::getHeight() { return mHeight; }
+LTimer::LTimer() {
+    // initialize the variables
+    mStartTicks = 0;
+    mPausedTicks = 0;
 
-bool init() {
-    // initalization flag
-    bool success = true;
+    mPaused = false;
+    mStarted = false;
+}
 
-    // initialize SDL
-    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) < 0) {
-        std::cout << "SDL could not initialize! SDL_Error: " << SDL_GetError() << "\n";
-        success = false;
-    } else {
-        // set texture filtering to linear
-        if (!SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "1")) {
-            std::cout << "Warning: Linear texture filtering not enabled!\n";
-        }
+void LTimer::start() {
+    // start the timer
+    mStarted = true;
 
-        // create window
-        gWindow = SDL_CreateWindow("SDL Test", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, SCREEN_WIDTH,
-                                   SCREEN_HEIGHT, SDL_WINDOW_SHOWN);
-        if (gWindow == NULL) {
-            std::cout << "Window could not be created! " << SDL_GetError() << "\n";
-            success = false;
+    // unpause the timer
+    mPaused = false;
+
+    // get the current clock time
+    mStartTicks = SDL_GetTicks();
+    mPausedTicks = 0;
+}
+
+void LTimer::stop() {
+    // stop the timer
+    mStarted = false;
+
+    // unpause the timer
+    mPaused = false;
+
+    // clear tick variables
+    mStartTicks = 0;
+    mPausedTicks = 0;
+}
+
+void LTimer::pause() {
+    // if the timer is running and isn't already paused
+    if (mStarted && !mPaused) {
+        // pause the timer
+        mPaused = true;
+
+        // calculate the pased ticks
+        mPausedTicks = SDL_GetTicks() - mStartTicks;
+        mStartTicks = 0;
+    }
+}
+
+void LTimer::unpause() {
+    // if the timer is running and paused
+    if (mStarted && mPaused) {
+        // unpause the timer
+        mPaused = false;
+
+        // reset the starting ticks
+        mStartTicks = SDL_GetTicks() - mPausedTicks;
+
+        // reset the paused ticks
+        mPausedTicks = 0;
+    }
+}
+
+Uint32 LTimer::getTicks() {
+    // the actual timer time
+    Uint32 time = 0;
+
+    // if the timer is running
+    if (mStarted) {
+        // if the timer is paused
+        if (mPaused) {
+            // return the number of ticks when the timer was paused
+            time = mPausedTicks;
         } else {
-            // create vsynced renderer for window
-            gRenderer = SDL_CreateRenderer(gWindow, -1, SDL_RENDERER_ACCELERATED);
-            if (gRenderer == NULL) {
-                std::cout << "Renderer could not be created! SDL Error: " << SDL_GetError() << "\n";
-                success = false;
-            } else {
-                // initialize renderer color
-
-                // initialize PNG loading
-                int imgFlags = IMG_INIT_PNG;
-                if (!(IMG_Init(imgFlags) & imgFlags)) {
-                    std::cout << "SDL_image could not initialize! SDL_image Eror: " << IMG_GetError() << "\n";
-                    success = false;
-                }
-
-                // initialize SDL_mixer
-                if (Mix_OpenAudio(44100, MIX_DEFAULT_FORMAT, 2, 2048) < 0) {
-                    std::cout << "SDL_mixer could not initialize! SDL_mixer Error: " << Mix_GetError() << "\n";
-                    success = false;
-                }
-
-                // initialize SDL_ttf
-                if (TTF_Init() == -1) {
-                    std::cout << "SDL_ttf could not initialize! SDL_ttf Error: " << TTF_GetError() << "\n";
-                    success = false;
-                }
-            }
+            // return the current time minus the start time
+            time = SDL_GetTicks() - mStartTicks;
         }
     }
 
-    return success;
+    return time;
 }
 
-bool loadMedia() {
-    // loading success flag
-    bool success = true;
+bool LTimer::isStarted() { return mStarted; }
 
-    // open the font
-    gFont = TTF_OpenFont("./resources/lazy.ttf", 28);
-    if (gFont == NULL) {
-        std::cout << "Failed to load lazy font! SDL_ttf Error: " << TTF_GetError() << "\n";
-        success = false;
-    } else {
-        // set text color as black
-        SDL_Color textColor = {0, 0, 0, 255};
-    }
+bool LTimer::isPaused() { return mPaused; }
 
-    return success;
+Dot::Dot() {
+    // initialize the offsets
+    mPosX = 0;
+    mPosY = 0;
+
+    // initalize the velocity
+    mVelX = 0;
+    mVelY = 0;
 }
 
-void close() {
-    // free loaded images
-    gTimeTextTexture.free();
-
-    // destroy window
-    SDL_DestroyRenderer(gRenderer);
-    gRenderer = NULL;
-    SDL_DestroyWindow(gWindow);
-    gWindow = NULL;
-
-    // quit SDL subsystems
-    Mix_Quit();
-    IMG_Quit();
-    SDL_Quit();
-    TTF_Quit();
-}
-
-int main(int argc, char* argv[]) {
-    std::cout << "starting sdltest\n";
-    if (!init()) {
-        std::cout << "Failed to initialize!\n";
-    } else {
-        // load media
-        if (!loadMedia()) {
-            std::cout << "Failed to load media!\n";
-        } else {
-            // main loop flag
-            bool quit = false;
-
-            // event handler
-            SDL_Event e;
-
-            // set text color as black
-            SDL_Color textColor = {0, 0, 0, 255};
-
-            // the frames per second timer
-            LTimer fpsTimer;
-
-            // the frames per second cap timer
-            LTimer capTimer;
-
-            // in memory text stream
-            std::stringstream timeText;
-
-            // start ocunting frames per second
-            int countedFrames = 0;
-            fpsTimer.start();
-
-            // while application is running
-            while (!quit) {
-
-                // start cap timer
-                capTimer.start();
-
-                // handle events on queue
-                while (SDL_PollEvent(&e) != 0) {
-                    // user requests quit
-                    if (e.type == SDL_QUIT) {
-                        quit = true;
-                    }
-                }
-
-                // calculate and correct fps
-                float avgFPS = countedFrames / (fpsTimer.getTicks() / 1000.f);
-                if (avgFPS > 2000000) {
-                    avgFPS = 0;
-                }
-
-                // set text to be rendered
-                timeText.str("");
-                timeText << "Average Frames Per Second (With Cap)" << avgFPS;
-
-                // render text
-                if (!gTimeTextTexture.loadFromRenderedText(timeText.str().c_str(), textColor)) {
-                    std::cout << "Unable to render time texture!\n";
-                }
-
-                // clear screen
-                SDL_SetRenderDrawColor(gRenderer, 255, 255, 255, 255);
-                SDL_RenderClear(gRenderer);
-
-                gTimeTextTexture.render((SCREEN_WIDTH - gTimeTextTexture.getWidth()) / 2,
-                                        (SCREEN_HEIGHT - gTimeTextTexture.getHeight()) / 2);
-
-                // update the screen
-                SDL_RenderPresent(gRenderer);
-
-                // increase frame count
-                ++countedFrames;
-
-                // if frame finished early
-                int frameTicks = capTimer.getTicks();
-                if (frameTicks < SCREEN_TICKS_PER_FRAME) {
-                    // wait remaining time
-                    SDL_Delay(SCREEN_TICKS_PER_FRAME - frameTicks);
-                }
-            }
+void Dot::handleEvent(SDL_Event &e) {
+    // if a key was pressed
+    if (e.type == SDL_KEYDOWN && e.key.repeat == 0) {
+        // adjust the velocity
+        switch (e.key.keysym.sym) {
+            case SDLK_UP: mVelY -= DOT_VEL; break;
+            case SDLK_DOWN: mVelY += DOT_VEL; break;
+            case SDLK_LEFT: mVelX -= DOT_VEL; break;
+            case SDLK_RIGHT: mVelX += DOT_VEL; break;
         }
     }
 
-    // free resources and close SDL
-    close();
-
-    return 0;
+    // if a key was released
+    else if (e.type== SDL_KEYUP && e.key.repeat == 0) {
+        // adjust the velocity
+        switch (e.key.keysym.sym) {
+            case SDLK_UP: mVelY += DOT_VEL; break;
+            case SDLK_DOWN: mVelY -= DOT_VEL; break;
+            case SDLK_LEFT: mVelX += DOT_VEL; break;
+            case SDLK_RIGHT: mVelX -= DOT_VEL; break;
+        }
+    }
 }
 
-SDL_Texture* loadTexture(std::string path) {
-    // the final texture
-    SDL_Texture* newTexture = NULL;
+void Dot::move() {
+    // move the dot left or right
+    mPosX += mVelX;
 
-    // load image at specified path
-    SDL_Surface* loadedSurface = IMG_Load(path.c_str());
-    if (loadedSurface == NULL) {
-        std::cout << "Unable to load image " << path.c_str() << "! SDL_image Error: " << IMG_GetError() << "\n";
-    } else {
-        // create texture from surface pixels
-        newTexture = SDL_CreateTextureFromSurface(gRenderer, loadedSurface);
-        if (newTexture == NULL) {
-            std::cout << "Unable to create texture from " << path.c_str() << "! SDL Error: " << SDL_GetError() << "\n";
-        }
-
-        // get rid of old loaded surface
-        SDL_FreeSurface(loadedSurface);
+    // if the dot went to far to the left or right
+    if ((mPosX < 0) || (mPosX + DOT_WIDTH > SCREEN_WIDTH)) {
+        // move back;
+        mPosX -= mVelX;
     }
 
-    return newTexture;
+    // move the dot up or down
+    mPosY += mVelY;
+
+    // if the dot went to far up or down
+    if ((mPosY < 0) || (mPosY + DOT_HEIGHT > SCREEN_HEIGHT)) {
+        // move back;
+        mPosY -= mVelY;
+    }
 }
 
+void Dot::render() {
+    // show the dot
+    gDotTexture.render(mPosX, mPosY);
+}
