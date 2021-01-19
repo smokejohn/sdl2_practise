@@ -8,6 +8,12 @@
 #include <string>
 #include <vector>
 
+// a circle structure
+struct Circle {
+    int x, y;
+    int r;
+};
+
 // the dot that will move around the screen
 class Dot {
    public:
@@ -25,13 +31,13 @@ class Dot {
     void handleEvent(SDL_Event& e);
 
     // moves the dot
-    void move(std::vector<SDL_Rect>& otherColliders);
+    void move(SDL_Rect& square, Circle& circle);
 
     // shows the dot on the screen
     void render();
 
-    // gets the collision boxes
-    std::vector<SDL_Rect>& getColliders();
+    // gets the collision circle
+    Circle& getCollider();
 
    private:
     // the x and y offsets of the dot
@@ -40,10 +46,10 @@ class Dot {
     // the velocity of the dot
     int mVelX, mVelY;
 
-    // dot's collision boxes
-    std::vector<SDL_Rect> mColliders;
+    // dot's collision circle
+    Circle mCollider;
 
-    // moves the collision boxes relative to the dot's offset
+    // moves the collision circle relative to the dot's offset
     void shiftColliders();
 };
 
@@ -131,8 +137,14 @@ bool loadMedia();
 // frees media and shuts down SDL
 void close();
 
-// box set collision detector
-bool checkCollision(std::vector<SDL_Rect>& a, std::vector<SDL_Rect>& b);
+// circle/circle collision detector
+bool checkCollision(Circle& a, Circle& b);
+
+// circle/box collision detector
+bool checkCollision(Circle& a, SDL_Rect& b);
+
+// calculates distance squared between two points
+double distanceSquared(int x1, int y1, int x2, int y2);
 
 // loads individual image as texture
 SDL_Texture* loadTexture(std::string path);
@@ -254,10 +266,12 @@ int main(int argc, char* argv[]) {
             SDL_Event e;
 
             // the dot that will be moving around the screen
-            Dot dot(0,0);
-
+            Dot dot(Dot::DOT_WIDTH / 2, Dot::DOT_HEIGHT / 2);
             // the dot that will be collided against
-            Dot otherDot(SCREEN_WIDTH/4, SCREEN_HEIGHT/4);
+            Dot otherDot(SCREEN_WIDTH / 4, SCREEN_HEIGHT / 4);
+
+            // set the wall
+            SDL_Rect wall = {300, 40, 40, 400};
 
             // while application is running
             while (!quit) {
@@ -273,12 +287,15 @@ int main(int argc, char* argv[]) {
                 }
 
                 // move the dot and check for collision
-                dot.move(otherDot.getColliders());
+                dot.move(wall, otherDot.getCollider());
 
                 // clear screen
                 SDL_SetRenderDrawColor(gRenderer, 255, 255, 255, 255);
                 SDL_RenderClear(gRenderer);
 
+                // render wall
+                SDL_SetRenderDrawColor(gRenderer, 0,0,0, 255);
+                SDL_RenderDrawRect(gRenderer, &wall);
 
                 // render dots
                 dot.render();
@@ -521,37 +538,14 @@ Dot::Dot(int x, int y) {
     mPosX = x;
     mPosY = y;
 
-    mColliders.resize(11);
+    // set collision circle size
+    mCollider.r = DOT_WIDTH / 2;
 
     // initalize the velocity
     mVelX = 0;
     mVelY = 0;
 
-    // initialize the collision boxes' width and height
-    mColliders[0].w = 6;
-    mColliders[0].h = 1;
-    mColliders[1].w = 10;
-    mColliders[1].h = 1;
-    mColliders[2].w = 14;
-    mColliders[2].h = 1;
-    mColliders[3].w = 16;
-    mColliders[3].h = 2;
-    mColliders[4].w = 18;
-    mColliders[4].h = 2;
-    mColliders[5].w = 20;
-    mColliders[5].h = 6;
-    mColliders[6].w = 18;
-    mColliders[6].h = 2;
-    mColliders[7].w = 16;
-    mColliders[7].h = 2;
-    mColliders[8].w = 14;
-    mColliders[8].h = 1;
-    mColliders[9].w = 10;
-    mColliders[9].h = 1;
-    mColliders[10].w = 6;
-    mColliders[10].h = 1;
-
-    // initialize collidesr relative to position
+    // initialize collider relative to the circle
     shiftColliders();
 }
 
@@ -595,13 +589,14 @@ void Dot::handleEvent(SDL_Event& e) {
     }
 }
 
-void Dot::move(std::vector<SDL_Rect>& otherColliders) {
+void Dot::move(SDL_Rect& square, Circle& circle) {
     // move the dot left or right
     mPosX += mVelX;
     shiftColliders();
 
     // if the dot collied or went to far to the left or right
-    if ((mPosX < 0) || (mPosX + DOT_WIDTH > SCREEN_WIDTH) || checkCollision(mColliders, otherColliders)) {
+    if ((mPosX < 0) || (mPosX + DOT_WIDTH > SCREEN_WIDTH) || checkCollision(mCollider, square) ||
+        checkCollision(mCollider, circle)) {
         // move back;
         mPosX -= mVelX;
         shiftColliders();
@@ -612,7 +607,8 @@ void Dot::move(std::vector<SDL_Rect>& otherColliders) {
     shiftColliders();
 
     // if the dot went to far up or down
-    if ((mPosY < 0) || (mPosY + DOT_HEIGHT > SCREEN_HEIGHT) || checkCollision(mColliders, otherColliders)) {
+    if ((mPosY < 0) || (mPosY + DOT_HEIGHT > SCREEN_HEIGHT) || checkCollision(mCollider, square) ||
+        checkCollision(mCollider, circle)) {
         // move back;
         mPosY -= mVelY;
         shiftColliders();
@@ -621,61 +617,68 @@ void Dot::move(std::vector<SDL_Rect>& otherColliders) {
 
 void Dot::render() {
     // show the dot
-    gDotTexture.render(mPosX, mPosY);
+    gDotTexture.render(mPosX - mCollider.r, mPosY - mCollider.r);
 }
 
 void Dot::shiftColliders() {
-    // the row offset;
-    int r = 0;
-
-    // go through the dot's collision boxes
-    for (int set = 0; set < mColliders.size(); ++set) {
-        // center the collision box
-        mColliders[set].x = mPosX + (DOT_WIDTH - mColliders[set].w) /2;
-
-        // set the collision box at its row offset
-        mColliders[set].y = mPosY + r;
-
-        // move the row offset down the height of the collision box
-        r += mColliders[set].h;
-    }
+    mCollider.x = mPosX;
+    mCollider.y = mPosY;
 }
 
-std::vector<SDL_Rect>& Dot::getColliders() {
-    return mColliders;
+Circle& Dot::getCollider() {
+    return mCollider;
 }
 
-bool checkCollision(std::vector<SDL_Rect>& a, std::vector<SDL_Rect>& b) {
-    // the sides of the rectangles
-    int leftA, leftB;
-    int rightA, rightB;
-    int topA, topB;
-    int bottomA, bottomB;
+bool checkCollision(Circle& a, Circle& b) {
+    // calculate total radius squared
+    int totalRadiusSquared = a.r + b.r;
+    totalRadiusSquared = totalRadiusSquared * totalRadiusSquared;
 
-    // go through the A boxes
-    for (int Abox = 0; Abox < a.size(); Abox++) {
-        // calculate the sides of rect A
-        leftA = a[Abox].x;
-        rightA = a[Abox].x + a[Abox].w;
-        topA = a[Abox].y;
-        bottomA = a[Abox].y + a[Abox].h;
-
-        // got through the B boxes
-        for (int Bbox = 0; Bbox < b.size(); Bbox++) {
-            // calculate the sides of rect A
-            leftB = b[Bbox].x;
-            rightB = b[Bbox].x + b[Bbox].w;
-            topB = b[Bbox].y;
-            bottomB = b[Bbox].y + b[Bbox].h;
-
-            // if no sides from A are outside of B
-            if (((bottomA <= topB) || (topA >= bottomB) || (rightA <= leftB) || (leftA >= rightB)) == false ) {
-                // A collision is detected
-                return true;
-            }
-        }
+    // if the distance between the centers of the circles is less than the sum of their radii
+    if (distanceSquared(a.x, a.y, b.x, b.y) < (totalRadiusSquared)) {
+        // the circles have collided
+        return true;
     }
 
-    // if neither set of collision boxes touched
+    // if not
     return false;
 }
+
+bool checkCollision(Circle& a, SDL_Rect& b) {
+    // closest point on collision box
+    int cX, cY;
+
+    // find closest x offset
+    if (a.x < b.x) {
+        cX = b.x;
+    } else if (a.x > b.x + b.w) {
+        cX = b.x + b.w;
+    } else {
+        cX = a.x;
+    }
+
+    // find closest y offset
+    if (a.y < b.y) {
+        cY = b.y;
+    } else if (a.y > b.y + b.h) {
+        cY = b.y + b.h;
+    } else {
+        cY = a.y;
+    }
+
+    // if the closest point is inside the circle
+    if (distanceSquared(a.x, a.y, cX, cY) < a.r * a.r) {
+        // this box and the circle have collided
+        return true;
+    }
+
+    // if the shapes have not collided
+    return false;
+}
+
+double distanceSquared(int x1, int y1, int x2, int y2) {
+    int deltaX = x2 - x1;
+    int deltaY = y2 - y1;
+    return deltaX * deltaX + deltaY * deltaY;
+}
+
