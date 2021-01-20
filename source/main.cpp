@@ -34,11 +34,7 @@ class Dot {
     void move();
 
     // shows the dot on the screen
-    void render(int camX, int camY);
-
-    // position accessors
-    int getPosX();
-    int getPosY();
+    void render();
 
    private:
     // the x and y offsets of the dot
@@ -229,7 +225,7 @@ bool loadMedia() {
         success = false;
     }
 
-    if (!gBGTexture.loadFromFile("./resources/images/bg.png")) {
+    if (!gBGTexture.loadFromFile("./resources/images/bg_gradient.png")) {
         std::cout << "Unable to load background texture!\n";
         success = false;
     }
@@ -272,8 +268,8 @@ int main(int argc, char* argv[]) {
             // the dot that will be moving around the screen
             Dot dot;
 
-            // the camera area
-            SDL_Rect camera = {0, 0, SCREEN_WIDTH, SCREEN_HEIGHT};
+            // the background scrolling offset
+            int scrollingOffset = 0;
 
             // while application is running
             while (!quit) {
@@ -291,22 +287,10 @@ int main(int argc, char* argv[]) {
                 // move the dot and check for collision
                 dot.move();
 
-                // center the camera over the dot
-                camera.x = (dot.getPosX() + Dot::DOT_WIDTH / 2) - SCREEN_WIDTH / 2;
-                camera.y = (dot.getPosY() + Dot::DOT_HEIGHT / 2) - SCREEN_HEIGHT / 2;
-
-                // keep the camera in bounds
-                if (camera.x < 0) {
-                    camera.x = 0;
-                }
-                if (camera.y < 0) {
-                    camera.y = 0;
-                }
-                if (camera.x > LEVEL_WIDTH - camera.w) {
-                    camera.x = LEVEL_WIDTH - camera.w;
-                }
-                if (camera.y > LEVEL_HEIGHT - camera.h) {
-                    camera.y = LEVEL_HEIGHT - camera.h;
+                // scroll background
+                --scrollingOffset;
+                if (scrollingOffset < -gBGTexture.getWidth()) {
+                    scrollingOffset = 0;
                 }
 
                 // clear screen
@@ -314,10 +298,11 @@ int main(int argc, char* argv[]) {
                 SDL_RenderClear(gRenderer);
 
                 // render background
-                gBGTexture.render(0, 0, &camera);
+                gBGTexture.render(scrollingOffset, 0);
+                gBGTexture.render(scrollingOffset + gBGTexture.getWidth(), 0);
 
                 // render dots
-                dot.render(camera.x, camera.y);
+                dot.render();
 
                 // update the screen
                 SDL_RenderPresent(gRenderer);
@@ -606,7 +591,7 @@ void Dot::move() {
     mPosX += mVelX;
 
     // if the dot went too far to the left or right
-    if ((mPosX < 0) || (mPosX + DOT_WIDTH > LEVEL_WIDTH)) {
+    if ((mPosX < 0) || (mPosX + DOT_WIDTH > SCREEN_WIDTH)) {
         // move back
         mPosX -= mVelX;
     }
@@ -614,20 +599,13 @@ void Dot::move() {
     mPosY += mVelY;
 
     // if the dot went too far up or down
-    if ((mPosY < 0) || (mPosY + DOT_HEIGHT > LEVEL_HEIGHT)) {
+    if ((mPosY < 0) || (mPosY + DOT_HEIGHT > SCREEN_HEIGHT)) {
         // move back
         mPosY -= mVelY;
     }
 }
 
-int Dot::getPosX() {
-    return mPosX;
-}
-
-int Dot::getPosY() {
-    return mPosY;
-}
-void Dot::render(int camX, int camY) {
+void Dot::render() {
     // show the dot
-    gDotTexture.render(mPosX - camX, mPosY - camY);
+    gDotTexture.render(mPosX, mPosY);
 }
