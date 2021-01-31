@@ -8,6 +8,9 @@
 #include <string>
 #include <vector>
 
+// total windows
+const int TOTAL_WINDOWS = 3;
+
 class LWindow {
    public:
     // initializes internals
@@ -22,6 +25,12 @@ class LWindow {
     // handles window events
     void handleEvent(SDL_Event& e);
 
+    // focuses on window
+    void focus();
+
+    // shows windows contents
+    void render();
+
     // deallocates internals
     void free();
 
@@ -33,10 +42,13 @@ class LWindow {
     bool hasMouseFocus();
     bool hasKeyboardFocus();
     bool isMinimized();
+    bool isShown();
 
    private:
     // window data
     SDL_Window* mWindow;
+    SDL_Renderer* mRenderer;
+    int mWindowID;
 
     // window dimensions
     int mWidth;
@@ -47,6 +59,7 @@ class LWindow {
     bool mKeyboardFocus;
     bool mFullScreen;
     bool mMinimized;
+    bool mShown;
 };
 
 // texture wrapper class
@@ -106,13 +119,10 @@ void close();
 SDL_Texture* loadTexture(std::string path);
 
 // our custom window
-LWindow gWindow;
+LWindow gWindows[TOTAL_WINDOWS];
 
 // the window renderer
 SDL_Renderer* gRenderer = NULL;
-
-// scene texture
-LTexture gSceneTexture;
 
 // font
 TTF_Font* gFont;
@@ -136,36 +146,27 @@ bool init() {
         }
 
         // create window
-        if (!gWindow.init()) {
-            std::cout << "Window could not be created! SDL Error: " << SDL_GetError() << "\n";
+        if (!gWindows[0].init()) {
+            std::cout << "Window 0 could not be created!\n";
             success = false;
         } else {
-            // create vsynced renderer for window
-            gRenderer = gWindow.createRenderer();
-            if (gRenderer == NULL) {
-                std::cout << "Renderer could not be created! SDL Error: " << SDL_GetError() << "\n";
+            // initialize PNG loading
+            int imgFlags = IMG_INIT_PNG;
+            if (!(IMG_Init(imgFlags) & imgFlags)) {
+                std::cout << "SDL_image could not initialize! SDL_image Eror: " << IMG_GetError() << "\n";
                 success = false;
-            } else {
-                // initialize renderer color
+            }
 
-                // initialize PNG loading
-                int imgFlags = IMG_INIT_PNG;
-                if (!(IMG_Init(imgFlags) & imgFlags)) {
-                    std::cout << "SDL_image could not initialize! SDL_image Eror: " << IMG_GetError() << "\n";
-                    success = false;
-                }
+            // initialize SDL_mixer
+            if (Mix_OpenAudio(44100, MIX_DEFAULT_FORMAT, 2, 2048) < 0) {
+                std::cout << "SDL_mixer could not initialize! SDL_mixer Error: " << Mix_GetError() << "\n";
+                success = false;
+            }
 
-                // initialize SDL_mixer
-                if (Mix_OpenAudio(44100, MIX_DEFAULT_FORMAT, 2, 2048) < 0) {
-                    std::cout << "SDL_mixer could not initialize! SDL_mixer Error: " << Mix_GetError() << "\n";
-                    success = false;
-                }
-
-                // initialize SDL_ttf
-                if (TTF_Init() == -1) {
-                    std::cout << "SDL_ttf could not initialize! SDL_ttf Error: " << TTF_GetError() << "\n";
-                    success = false;
-                }
+            // initialize SDL_ttf
+            if (TTF_Init() == -1) {
+                std::cout << "SDL_ttf could not initialize! SDL_ttf Error: " << TTF_GetError() << "\n";
+                success = false;
             }
         }
     }
@@ -177,21 +178,16 @@ bool loadMedia() {
     // loading success flag
     bool success = true;
 
-    if (!gSceneTexture.loadFromFile("./resources/images/window.png")) {
-        std::cout << "Could not load window texture! SDL Error: " << SDL_GetError() << "\n";
-        success = false;
-    }
-
     return success;
 }
 
 void close() {
-    // free loaded images
-    gSceneTexture.free();
-
-    // destroy window
+    // destroy windows
     SDL_DestroyRenderer(gRenderer);
-    gWindow.free();
+
+    for (int i = 0; i < TOTAL_WINDOWS; ++i) {
+        gWindows[i].free();
+    }
 
     // quit SDL subsystems
     Mix_Quit();
@@ -210,6 +206,11 @@ int main(int argc, char* argv[]) {
         if (!loadMedia()) {
             std::cout << "Failed to load media!\n";
         } else {
+            // init the rest of the windows
+            for (int i = 1; i < TOTAL_WINDOWS; ++i) {
+                gWindows[i].init();
+            }
+
             // main loop flag
             bool quit = false;
 
@@ -226,21 +227,43 @@ int main(int argc, char* argv[]) {
                     }
 
                     // handle window events
-                    gWindow.handleEvent(e);
+                    for (int i = 0; i < TOTAL_WINDOWS; ++i) {
+                        gWindows[i].handleEvent(e);
+                    }
+
+                    // pull up window
+                    if (e.type == SDL_KEYDOWN) {
+                        switch (e.key.keysym.sym) {
+                            case SDLK_1:
+                                gWindows[0].focus();
+                                break;
+                            case SDLK_2:
+                                gWindows[1].focus();
+                                break;
+                            case SDLK_3:
+                                gWindows[2].focus();
+                                break;
+                        }
+                    }
                 }
 
-                // only draw when not minimized
-                if (!gWindow.isMinimized()) {
-                    // clear the screen
-                    SDL_SetRenderDrawColor(gRenderer, 255, 255, 255, 255);
-                    SDL_RenderClear(gRenderer);
+                // update all windows
+                for (int i = 0; i < TOTAL_WINDOWS; ++i) {
+                    gWindows[i].render();
+                }
 
-                    // render textures
-                    gSceneTexture.render((gWindow.getWidth() - gSceneTexture.getWidth()) / 2,
-                                         (gWindow.getHeight() - gSceneTexture.getHeight()) / 2);
+                // check al lwindows
+                bool allWindowsClosed = true;
+                for (int i = 0; i < TOTAL_WINDOWS; ++i) {
+                    if (gWindows[i].isShown()) {
+                        allWindowsClosed = false;
+                        break;
+                    }
+                }
 
-                    // update screen
-                    SDL_RenderPresent(gRenderer);
+                // application closed all windows
+                if (allWindowsClosed) {
+                    quit = true;
                 }
             }
         }
@@ -411,9 +434,27 @@ bool LWindow::init() {
         mKeyboardFocus = true;
         mWidth = SCREEN_WIDTH;
         mHeight = SCREEN_HEIGHT;
+
+        // create renderer for window
+        mRenderer = SDL_CreateRenderer(mWindow, 01, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
+        if (mRenderer == NULL) {
+            std::cout << "Renderer could not be created! Sdl Error: " << SDL_GetError() << "\n";
+            mWindow = NULL;
+        } else {
+            // initialize renderer color
+            SDL_SetRenderDrawColor(mRenderer, 255, 255, 255, 255);
+
+            // grab window identifier
+            mWindowID = SDL_GetWindowID(mWindow);
+
+            // flag as opened
+            mShown = true;
+        }
+    } else {
+        std::cout << "Window could not be created! SDL Error: " << SDL_GetError() << "\n";
     }
 
-    return mWindow != NULL;
+    return mWindow != NULL && mRenderer != NULL;
 }
 
 SDL_Renderer* LWindow::createRenderer() {
@@ -422,11 +463,21 @@ SDL_Renderer* LWindow::createRenderer() {
 
 void LWindow::handleEvent(SDL_Event& e) {
     // window event occured
-    if (e.type == SDL_WINDOWEVENT) {
+    if (e.type == SDL_WINDOWEVENT && e.window.windowID == mWindowID) {
         // caption update flag
         bool updateCaption = false;
 
         switch (e.window.event) {
+            // window appeared
+            case SDL_WINDOWEVENT_SHOWN:
+                mShown = true;
+                break;
+
+            // window disappeared
+            case SDL_WINDOWEVENT_HIDDEN:
+                mShown = false;
+                break;
+
             // get new dimensions and repaint on window size change
             case SDL_WINDOWEVENT_SIZE_CHANGED:
                 mWidth = e.window.data1;
@@ -468,14 +519,19 @@ void LWindow::handleEvent(SDL_Event& e) {
                 mMinimized = true;
                 break;
 
-            // window minimized
+            // window maximized
             case SDL_WINDOWEVENT_MAXIMIZED:
                 mMinimized = false;
                 break;
 
-            // window minimized
+            // window restored
             case SDL_WINDOWEVENT_RESTORED:
                 mMinimized = false;
+                break;
+
+            // hide window on close
+            case SDL_WINDOWEVENT_CLOSE:
+                SDL_HideWindow(mWindow);
                 break;
         }
 
@@ -511,6 +567,27 @@ void LWindow::free() {
     mHeight = 0;
 }
 
+void LWindow::focus() {
+    // restore window if needed
+    if (!mShown) {
+        SDL_ShowWindow(mWindow);
+    }
+
+    // move window forward
+    SDL_RaiseWindow(mWindow);
+}
+
+void LWindow::render() {
+    if (!mMinimized) {
+        // clear screen
+        SDL_SetRenderDrawColor(mRenderer, 255, 255, 255, 255);
+        SDL_RenderClear(mRenderer);
+
+        // update screen
+        SDL_RenderPresent(mRenderer);
+    }
+}
+
 int LWindow::getWidth() { return mWidth; }
 
 int LWindow::getHeight() { return mHeight; }
@@ -520,3 +597,5 @@ bool LWindow::hasMouseFocus() { return mMouseFocus; }
 bool LWindow::hasKeyboardFocus() { return mKeyboardFocus; }
 
 bool LWindow::isMinimized() { return mMinimized; }
+
+bool LWindow::isShown() { return mShown; }
