@@ -8,9 +8,6 @@
 #include <string>
 #include <vector>
 
-// total windows
-const int TOTAL_WINDOWS = 3;
-
 class LWindow {
    public:
     // initializes internals
@@ -18,9 +15,6 @@ class LWindow {
 
     // creates window
     bool init();
-
-    // creates renderer from internal window
-    SDL_Renderer* createRenderer();
 
     // handles window events
     void handleEvent(SDL_Event& e);
@@ -49,6 +43,7 @@ class LWindow {
     SDL_Window* mWindow;
     SDL_Renderer* mRenderer;
     int mWindowID;
+    int mWindowDisplayID;
 
     // window dimensions
     int mWidth;
@@ -119,7 +114,11 @@ void close();
 SDL_Texture* loadTexture(std::string path);
 
 // our custom window
-LWindow gWindows[TOTAL_WINDOWS];
+LWindow gWindow;
+
+// display data
+int gTotalDisplays = 0;
+SDL_Rect* gDisplayBounds = NULL;
 
 // the window renderer
 SDL_Renderer* gRenderer = NULL;
@@ -136,7 +135,7 @@ bool init() {
     bool success = true;
 
     // initialize SDL
-    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) < 0) {
+    if (SDL_Init(SDL_INIT_VIDEO) < 0) {
         std::cout << "SDL could not initialize! SDL_Error: " << SDL_GetError() << "\n";
         success = false;
     } else {
@@ -145,9 +144,21 @@ bool init() {
             std::cout << "Warning: Linear texture filtering not enabled!\n";
         }
 
+        // get number of displays
+        gTotalDisplays = SDL_GetNumVideoDisplays();
+        if (gTotalDisplays < 2 ) {
+            std::cout << "Warning: Only one display connected!\n";
+        }
+
+        // get bounds of each display
+        gDisplayBounds = new SDL_Rect[gTotalDisplays];
+        for ( int i = 0; i < gTotalDisplays; ++i) {
+            SDL_GetDisplayBounds(i, &gDisplayBounds[i]);
+        }
+
         // create window
-        if (!gWindows[0].init()) {
-            std::cout << "Window 0 could not be created!\n";
+        if (!gWindow.init()) {
+            std::cout << "Window could not be created!\n";
             success = false;
         } else {
             // initialize PNG loading
@@ -170,7 +181,6 @@ bool init() {
             }
         }
     }
-
     return success;
 }
 
@@ -184,10 +194,6 @@ bool loadMedia() {
 void close() {
     // destroy windows
     SDL_DestroyRenderer(gRenderer);
-
-    for (int i = 0; i < TOTAL_WINDOWS; ++i) {
-        gWindows[i].free();
-    }
 
     // quit SDL subsystems
     Mix_Quit();
@@ -206,11 +212,6 @@ int main(int argc, char* argv[]) {
         if (!loadMedia()) {
             std::cout << "Failed to load media!\n";
         } else {
-            // init the rest of the windows
-            for (int i = 1; i < TOTAL_WINDOWS; ++i) {
-                gWindows[i].init();
-            }
-
             // main loop flag
             bool quit = false;
 
@@ -227,44 +228,11 @@ int main(int argc, char* argv[]) {
                     }
 
                     // handle window events
-                    for (int i = 0; i < TOTAL_WINDOWS; ++i) {
-                        gWindows[i].handleEvent(e);
-                    }
-
-                    // pull up window
-                    if (e.type == SDL_KEYDOWN) {
-                        switch (e.key.keysym.sym) {
-                            case SDLK_1:
-                                gWindows[0].focus();
-                                break;
-                            case SDLK_2:
-                                gWindows[1].focus();
-                                break;
-                            case SDLK_3:
-                                gWindows[2].focus();
-                                break;
-                        }
-                    }
+                    gWindow.handleEvent(e);
                 }
 
-                // update all windows
-                for (int i = 0; i < TOTAL_WINDOWS; ++i) {
-                    gWindows[i].render();
-                }
-
-                // check al lwindows
-                bool allWindowsClosed = true;
-                for (int i = 0; i < TOTAL_WINDOWS; ++i) {
-                    if (gWindows[i].isShown()) {
-                        allWindowsClosed = false;
-                        break;
-                    }
-                }
-
-                // application closed all windows
-                if (allWindowsClosed) {
-                    quit = true;
-                }
+                // update window
+                gWindow.render();
             }
         }
     }
@@ -444,8 +412,9 @@ bool LWindow::init() {
             // initialize renderer color
             SDL_SetRenderDrawColor(mRenderer, 255, 255, 255, 255);
 
-            // grab window identifier
+            // grab window identifiers
             mWindowID = SDL_GetWindowID(mWindow);
+            mWindowDisplayID = SDL_GetWindowDisplayIndex(mWindow);
 
             // flag as opened
             mShown = true;
@@ -457,17 +426,19 @@ bool LWindow::init() {
     return mWindow != NULL && mRenderer != NULL;
 }
 
-SDL_Renderer* LWindow::createRenderer() {
-    return SDL_CreateRenderer(mWindow, 01, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
-}
-
 void LWindow::handleEvent(SDL_Event& e) {
+    // caption update flag
+    bool updateCaption = false;
+
     // window event occured
     if (e.type == SDL_WINDOWEVENT && e.window.windowID == mWindowID) {
-        // caption update flag
-        bool updateCaption = false;
-
         switch (e.window.event) {
+            // window moved
+            case SDL_WINDOWEVENT_MOVED:
+                mWindowDisplayID = SDL_GetWindowDisplayIndex(mWindow);
+                updateCaption = true;
+                break;
+
             // window appeared
             case SDL_WINDOWEVENT_SHOWN:
                 mShown = true;
@@ -534,26 +505,44 @@ void LWindow::handleEvent(SDL_Event& e) {
                 SDL_HideWindow(mWindow);
                 break;
         }
+    } else if (e.type == SDL_KEYDOWN) {
+        // display change flag
+        bool switchDisplay = false;
 
-        // update window caption with new data
-        if (updateCaption) {
-            std::stringstream caption;
-            caption << "SDL Tutorial - MouseFocus:" << ((mMouseFocus) ? "On" : "Off")
-                    << " KeyboardFocus:" << ((mKeyboardFocus) ? "On" : "Off");
-            SDL_SetWindowTitle(mWindow, caption.str().c_str());
+        // cycle through displays on up/down
+        switch (e.key.keysym.sym) {
+            case SDLK_UP:
+                ++mWindowDisplayID;
+                switchDisplay = true;
+                break;
+
+            case SDLK_DOWN:
+                --mWindowDisplayID;
+                switchDisplay = true;
+                break;
+        }
+        // display needs to be updated
+        if (switchDisplay) {
+            // bound display index
+            if (mWindowDisplayID < 0) {
+                mWindowDisplayID = gTotalDisplays - 1;
+            } else if (mWindowDisplayID >= gTotalDisplays) {
+                mWindowDisplayID = 0;
+            }
+
+            // move window to center of next display
+            SDL_Rect bounds = gDisplayBounds[mWindowDisplayID];
+            SDL_SetWindowPosition(mWindow, bounds.x + (bounds.w - mWidth) / 2, bounds.y + (bounds.h - mHeight) / 2);
+            updateCaption = true;
         }
     }
-
-    // enter exit full screen on return key
-    else if (e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_RETURN) {
-        if (mFullScreen) {
-            SDL_SetWindowFullscreen(mWindow, SDL_FALSE);
-            mFullScreen = false;
-        } else {
-            SDL_SetWindowFullscreen(mWindow, SDL_TRUE);
-            mFullScreen = true;
-            mMinimized = false;
-        }
+    // update window caption with new data
+    if (updateCaption) {
+        std::stringstream caption;
+        caption << "SDL Tutorial - ID: " << mWindowID << " Display: " << mWindowDisplayID
+                << " MouseFocus:" << ((mMouseFocus) ? "On" : "Off")
+                << " KeyboardFocus:" << ((mKeyboardFocus) ? "On" : "Off");
+        SDL_SetWindowTitle(mWindow, caption.str().c_str());
     }
 }
 
