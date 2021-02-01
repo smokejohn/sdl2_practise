@@ -8,54 +8,12 @@
 #include <string>
 #include <vector>
 
-class LWindow {
-   public:
-    // initializes internals
-    LWindow();
+// particle count
+const int TOTAL_PARTICLES = 20;
 
-    // creates window
-    bool init();
-
-    // handles window events
-    void handleEvent(SDL_Event& e);
-
-    // focuses on window
-    void focus();
-
-    // shows windows contents
-    void render();
-
-    // deallocates internals
-    void free();
-
-    // window dimensions
-    int getWidth();
-    int getHeight();
-
-    // window focii
-    bool hasMouseFocus();
-    bool hasKeyboardFocus();
-    bool isMinimized();
-    bool isShown();
-
-   private:
-    // window data
-    SDL_Window* mWindow;
-    SDL_Renderer* mRenderer;
-    int mWindowID;
-    int mWindowDisplayID;
-
-    // window dimensions
-    int mWidth;
-    int mHeight;
-
-    // window focus
-    bool mMouseFocus;
-    bool mKeyboardFocus;
-    bool mFullScreen;
-    bool mMinimized;
-    bool mShown;
-};
+// screen dimension constants
+const int SCREEN_WIDTH = 640;
+const int SCREEN_HEIGHT = 480;
 
 // texture wrapper class
 class LTexture {
@@ -103,6 +61,67 @@ class LTexture {
     int mHeight;
 };
 
+
+class Particle {
+   public:
+    // initialize position and animation
+    Particle(int x, int y);
+
+    // shows the particle
+    void render();
+
+    // check if particle is dead
+    bool isDead();
+   private:
+    // offsets
+    int mPosX, mPosY;
+
+    // current frame of animation
+    int mFrame;
+
+    // type of marticle
+    LTexture* mTexture;
+};
+
+// the dot that will move around the screen
+class Dot {
+   public:
+    // the dimensions of the dot
+    static const int DOT_WIDTH = 20;
+    static const int DOT_HEIGHT = 20;
+
+    // maximum axis velocity of the dot
+    static const int DOT_VEL = 10;
+
+    // initializes the variables and allocates particles
+    Dot();
+
+    // deallocates particles
+    ~Dot();
+
+    // takes key presses and adjusts the dot's velocity
+    void handleEvent(SDL_Event& e);
+
+    // modes the dot
+    void move();
+
+    // shows the dot on the screen
+    void render();
+
+   private:
+    // the particles
+    Particle* particles[TOTAL_PARTICLES];
+
+    // shows the particles
+    void renderParticles();
+
+    // the X and Y offsets of the dot
+    int mPosX, mPosY;
+
+    // the velocity of the dot
+    int mVelX, mVelY;
+};
+
 // starts up SDL and creates a window
 bool init();
 // loads media
@@ -110,25 +129,22 @@ bool loadMedia();
 // frees media and shuts down SDL
 void close();
 
-// loads individual image as texture
-SDL_Texture* loadTexture(std::string path);
-
-// our custom window
-LWindow gWindow;
-
-// display data
-int gTotalDisplays = 0;
-SDL_Rect* gDisplayBounds = NULL;
+// the window
+SDL_Window* gWindow = NULL;
 
 // the window renderer
 SDL_Renderer* gRenderer = NULL;
 
+// scene textures
+LTexture gDotTexture;
+LTexture gRedTexture;
+LTexture gGreenTexture;
+LTexture gBlueTexture;
+LTexture gShimmerTexture;
+
 // font
 TTF_Font* gFont;
 
-// screen dimension constants
-const int SCREEN_WIDTH = 640;
-const int SCREEN_HEIGHT = 480;
 
 bool init() {
     // initialization flag
@@ -144,40 +160,37 @@ bool init() {
             std::cout << "Warning: Linear texture filtering not enabled!\n";
         }
 
-        // get number of displays
-        gTotalDisplays = SDL_GetNumVideoDisplays();
-        if (gTotalDisplays < 2 ) {
-            std::cout << "Warning: Only one display connected!\n";
-        }
-
-        // get bounds of each display
-        gDisplayBounds = new SDL_Rect[gTotalDisplays];
-        for ( int i = 0; i < gTotalDisplays; ++i) {
-            SDL_GetDisplayBounds(i, &gDisplayBounds[i]);
-        }
-
         // create window
-        if (!gWindow.init()) {
+        gWindow = SDL_CreateWindow("SDL Tutorial", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, SCREEN_WIDTH,
+                                   SCREEN_HEIGHT, SDL_WINDOW_RESIZABLE);
+        if (gWindow == NULL) {
             std::cout << "Window could not be created!\n";
             success = false;
         } else {
-            // initialize PNG loading
-            int imgFlags = IMG_INIT_PNG;
-            if (!(IMG_Init(imgFlags) & imgFlags)) {
-                std::cout << "SDL_image could not initialize! SDL_image Eror: " << IMG_GetError() << "\n";
+            // create renderer for window
+            gRenderer = SDL_CreateRenderer(gWindow, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
+            if (gRenderer == NULL) {
+                std::cout << "Renderer could not be created! SDL Error: " << SDL_GetError() << "\n";
                 success = false;
-            }
+            } else {
+                // initialize PNG loading
+                int imgFlags = IMG_INIT_PNG;
+                if (!(IMG_Init(imgFlags) & imgFlags)) {
+                    std::cout << "SDL_image could not initialize! SDL_image Eror: " << IMG_GetError() << "\n";
+                    success = false;
+                }
 
-            // initialize SDL_mixer
-            if (Mix_OpenAudio(44100, MIX_DEFAULT_FORMAT, 2, 2048) < 0) {
-                std::cout << "SDL_mixer could not initialize! SDL_mixer Error: " << Mix_GetError() << "\n";
-                success = false;
-            }
+                // initialize SDL_mixer
+                if (Mix_OpenAudio(44100, MIX_DEFAULT_FORMAT, 2, 2048) < 0) {
+                    std::cout << "SDL_mixer could not initialize! SDL_mixer Error: " << Mix_GetError() << "\n";
+                    success = false;
+                }
 
-            // initialize SDL_ttf
-            if (TTF_Init() == -1) {
-                std::cout << "SDL_ttf could not initialize! SDL_ttf Error: " << TTF_GetError() << "\n";
-                success = false;
+                // initialize SDL_ttf
+                if (TTF_Init() == -1) {
+                    std::cout << "SDL_ttf could not initialize! SDL_ttf Error: " << TTF_GetError() << "\n";
+                    success = false;
+                }
             }
         }
     }
@@ -188,12 +201,54 @@ bool loadMedia() {
     // loading success flag
     bool success = true;
 
+    // load dot texture
+    if (!gDotTexture.loadFromFile("./resources/images/dot.bmp")) {
+        std::cout << "Failed to load dot texture!\n";
+        success = false;
+    }
+
+    if (!gRedTexture.loadFromFile("./resources/images/red.bmp")) {
+        std::cout << "Failed to load red texture!\n";
+        success = false;
+    }
+
+    if (!gGreenTexture.loadFromFile("./resources/images/green.bmp")) {
+        std::cout << "Failed to load green texture!\n";
+        success = false;
+    }
+
+    if (!gBlueTexture.loadFromFile("./resources/images/blue.bmp")) {
+        std::cout << "Failed to load blue texture!\n";
+        success = false;
+    }
+
+    if (!gShimmerTexture.loadFromFile("./resources/images/shimmer.bmp")) {
+        std::cout << "Failed to load shimmer texture!\n";
+        success = false;
+    }
+
+    // set texture transparency
+    gRedTexture.setAlpha(192);
+    gGreenTexture.setAlpha(192);
+    gBlueTexture.setAlpha(192);
+    gShimmerTexture.setAlpha(192);
+
     return success;
 }
 
 void close() {
     // destroy windows
     SDL_DestroyRenderer(gRenderer);
+    SDL_DestroyWindow(gWindow);
+    gRenderer = NULL;
+    gWindow = NULL;
+
+    // destroy data
+    gDotTexture.free();
+    gRedTexture.free();
+    gGreenTexture.free();
+    gBlueTexture.free();
+    gShimmerTexture.free();
 
     // quit SDL subsystems
     Mix_Quit();
@@ -218,6 +273,9 @@ int main(int argc, char* argv[]) {
             // event handler
             SDL_Event e;
 
+            // the dot
+            Dot dot;
+
             // while application is running
             while (!quit) {
                 // handle events on queue
@@ -227,12 +285,28 @@ int main(int argc, char* argv[]) {
                         quit = true;
                     }
 
-                    // handle window events
-                    gWindow.handleEvent(e);
+                    if (e.type == SDL_KEYDOWN) {
+                        if (e.key.keysym.sym == SDLK_ESCAPE) {
+                            quit = true;
+                        }
+                    }
+
+                    // handle input for the dot
+                    dot.handleEvent(e);
                 }
 
-                // update window
-                gWindow.render();
+                // move the dot
+                dot.move();
+
+                // clear screen
+                SDL_SetRenderDrawColor(gRenderer, 255, 255, 255, 255);
+                SDL_RenderClear(gRenderer);
+
+                // render objects
+                dot.render();
+
+                // update the screen
+                SDL_RenderPresent(gRenderer);
             }
         }
     }
@@ -241,28 +315,6 @@ int main(int argc, char* argv[]) {
     close();
 
     return 0;
-}
-
-SDL_Texture* loadTexture(std::string path) {
-    // the final texture
-    SDL_Texture* newTexture = NULL;
-
-    // load image at specified path
-    SDL_Surface* loadedSurface = IMG_Load(path.c_str());
-    if (loadedSurface == NULL) {
-        std::cout << "Unable to load image " << path.c_str() << "! SDL_image Error: " << IMG_GetError() << "\n";
-    } else {
-        // create texture from surface pixels
-        newTexture = SDL_CreateTextureFromSurface(gRenderer, loadedSurface);
-        if (newTexture == NULL) {
-            std::cout << "Unable to create texture from " << path.c_str() << "! SDL Error: " << SDL_GetError() << "\n";
-        }
-
-        // get rid of old loaded surface
-        SDL_FreeSurface(loadedSurface);
-    }
-
-    return newTexture;
 }
 
 LTexture::LTexture() {
@@ -382,209 +434,144 @@ int LTexture::getWidth() { return mWidth; }
 
 int LTexture::getHeight() { return mHeight; }
 
-LWindow::LWindow() {
-    // initialize non-existant window
-    mWindow = NULL;
-    mMouseFocus = false;
-    mKeyboardFocus = false;
-    mFullScreen = false;
-    mMinimized = false;
-    mWidth = 0;
-    mHeight = 0;
+Particle::Particle(int x, int y) {
+    // set offsets
+    mPosX = x - 5 + (rand() % 25);
+    mPosY = y - 5 + (rand() % 25);
+
+    // initialize animation
+    mFrame = rand() % 5;
+
+    // set type
+    switch (rand() % 3) {
+        case 0:
+            mTexture = &gRedTexture;
+            break;
+        case 1:
+            mTexture = &gGreenTexture;
+            break;
+        case 2:
+            mTexture = &gBlueTexture;
+            break;
+    }
 }
 
-bool LWindow::init() {
-    // create window
-    mWindow = SDL_CreateWindow("SDL Tutorial", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, SCREEN_WIDTH,
-                               SCREEN_HEIGHT, SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE);
-    if (mWindow != NULL) {
-        mMouseFocus = true;
-        mKeyboardFocus = true;
-        mWidth = SCREEN_WIDTH;
-        mHeight = SCREEN_HEIGHT;
+void Particle::render() {
+    // show image
+    mTexture->render(mPosX, mPosY);
 
-        // create renderer for window
-        mRenderer = SDL_CreateRenderer(mWindow, 01, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
-        if (mRenderer == NULL) {
-            std::cout << "Renderer could not be created! Sdl Error: " << SDL_GetError() << "\n";
-            mWindow = NULL;
-        } else {
-            // initialize renderer color
-            SDL_SetRenderDrawColor(mRenderer, 255, 255, 255, 255);
-
-            // grab window identifiers
-            mWindowID = SDL_GetWindowID(mWindow);
-            mWindowDisplayID = SDL_GetWindowDisplayIndex(mWindow);
-
-            // flag as opened
-            mShown = true;
-        }
-    } else {
-        std::cout << "Window could not be created! SDL Error: " << SDL_GetError() << "\n";
+    // show shimmer
+    if (mFrame % 2 == 0) {
+        gShimmerTexture.render(mPosX, mPosY);
     }
 
-    return mWindow != NULL && mRenderer != NULL;
+    // animate
+    mFrame++;
 }
 
-void LWindow::handleEvent(SDL_Event& e) {
-    // caption update flag
-    bool updateCaption = false;
+bool Particle::isDead() { return mFrame > 10; }
 
-    // window event occured
-    if (e.type == SDL_WINDOWEVENT && e.window.windowID == mWindowID) {
-        switch (e.window.event) {
-            // window moved
-            case SDL_WINDOWEVENT_MOVED:
-                mWindowDisplayID = SDL_GetWindowDisplayIndex(mWindow);
-                updateCaption = true;
-                break;
+Dot::Dot() {
+    // initialize the offsets
+    mPosX = 0;
+    mPosY = 0;
 
-            // window appeared
-            case SDL_WINDOWEVENT_SHOWN:
-                mShown = true;
-                break;
+    // initialize the velocity
+    mVelX = 0;
+    mVelY = 0;
 
-            // window disappeared
-            case SDL_WINDOWEVENT_HIDDEN:
-                mShown = false;
-                break;
+    // initialize particles
+    for (int i = 0; i < TOTAL_PARTICLES; ++i) {
+        particles[i] = new Particle(mPosX, mPosY);
+    }
+}
 
-            // get new dimensions and repaint on window size change
-            case SDL_WINDOWEVENT_SIZE_CHANGED:
-                mWidth = e.window.data1;
-                mHeight = e.window.data2;
-                SDL_RenderPresent(gRenderer);
-                break;
+Dot::~Dot() {
+    // delete particles
+    for (int i = 0; i < TOTAL_PARTICLES; ++i) {
+        delete particles[i];
+    }
+}
 
-            // repaint on exposure
-            case SDL_WINDOWEVENT_EXPOSED:
-                SDL_RenderPresent(gRenderer);
-                break;
+void Dot::render() {
+    // show the dot
+    gDotTexture.render(mPosX, mPosY);
 
-            // mouse entered window
-            case SDL_WINDOWEVENT_ENTER:
-                mMouseFocus = true;
-                updateCaption = true;
-                break;
+    // show the particles
+    renderParticles();
+}
 
-            // mouse left window
-            case SDL_WINDOWEVENT_LEAVE:
-                mMouseFocus = false;
-                updateCaption = true;
-                break;
+void Dot::move() {
+    // move the dot left or right
+    mPosX += mVelX;
 
-            // window has keyboard focus
-            case SDL_WINDOWEVENT_FOCUS_GAINED:
-                mKeyboardFocus = true;
-                updateCaption = true;
-                break;
+    // if the dot went too far to the left or right
+    if ((mPosX < 0) || (mPosX + DOT_WIDTH > SCREEN_WIDTH)) {
+        // move back
+        mPosX -= mVelX;
+    }
 
-            // window lost keyboard focus
-            case SDL_WINDOWEVENT_FOCUS_LOST:
-                mKeyboardFocus = false;
-                updateCaption = true;
-                break;
+    // move the dot up or down
+    mPosY += mVelY;
 
-            // window minimized
-            case SDL_WINDOWEVENT_MINIMIZED:
-                mMinimized = true;
-                break;
+    // if the dot went too far up or down
+    if ((mPosY < 0) || (mPosY + DOT_HEIGHT > SCREEN_HEIGHT)) {
+        // move back
+        mPosY -= mVelY;
+    }
+}
 
-            // window maximized
-            case SDL_WINDOWEVENT_MAXIMIZED:
-                mMinimized = false;
-                break;
-
-            // window restored
-            case SDL_WINDOWEVENT_RESTORED:
-                mMinimized = false;
-                break;
-
-            // hide window on close
-            case SDL_WINDOWEVENT_CLOSE:
-                SDL_HideWindow(mWindow);
-                break;
-        }
-    } else if (e.type == SDL_KEYDOWN) {
-        // display change flag
-        bool switchDisplay = false;
-
-        // cycle through displays on up/down
+void Dot::handleEvent(SDL_Event& e) {
+    // If a key was pressed
+    if (e.type == SDL_KEYDOWN && e.key.repeat == 0) {
+        // Adjust the velocity
         switch (e.key.keysym.sym) {
             case SDLK_UP:
-                ++mWindowDisplayID;
-                switchDisplay = true;
+                mVelY -= DOT_VEL;
                 break;
-
             case SDLK_DOWN:
-                --mWindowDisplayID;
-                switchDisplay = true;
+                mVelY += DOT_VEL;
+                break;
+            case SDLK_LEFT:
+                mVelX -= DOT_VEL;
+                break;
+            case SDLK_RIGHT:
+                mVelX += DOT_VEL;
                 break;
         }
-        // display needs to be updated
-        if (switchDisplay) {
-            // bound display index
-            if (mWindowDisplayID < 0) {
-                mWindowDisplayID = gTotalDisplays - 1;
-            } else if (mWindowDisplayID >= gTotalDisplays) {
-                mWindowDisplayID = 0;
-            }
-
-            // move window to center of next display
-            SDL_Rect bounds = gDisplayBounds[mWindowDisplayID];
-            SDL_SetWindowPosition(mWindow, bounds.x + (bounds.w - mWidth) / 2, bounds.y + (bounds.h - mHeight) / 2);
-            updateCaption = true;
+    }
+    // If a key was released
+    else if (e.type == SDL_KEYUP && e.key.repeat == 0) {
+        // Adjust the velocity
+        switch (e.key.keysym.sym) {
+            case SDLK_UP:
+                mVelY += DOT_VEL;
+                break;
+            case SDLK_DOWN:
+                mVelY -= DOT_VEL;
+                break;
+            case SDLK_LEFT:
+                mVelX += DOT_VEL;
+                break;
+            case SDLK_RIGHT:
+                mVelX -= DOT_VEL;
+                break;
         }
     }
-    // update window caption with new data
-    if (updateCaption) {
-        std::stringstream caption;
-        caption << "SDL Tutorial - ID: " << mWindowID << " Display: " << mWindowDisplayID
-                << " MouseFocus:" << ((mMouseFocus) ? "On" : "Off")
-                << " KeyboardFocus:" << ((mKeyboardFocus) ? "On" : "Off");
-        SDL_SetWindowTitle(mWindow, caption.str().c_str());
-    }
 }
 
-void LWindow::free() {
-    if (mWindow != NULL) {
-        SDL_DestroyWindow(mWindow);
-    }
-    mMouseFocus = false;
-    mKeyboardFocus = false;
-    mWidth = 0;
-    mHeight = 0;
-}
-
-void LWindow::focus() {
-    // restore window if needed
-    if (!mShown) {
-        SDL_ShowWindow(mWindow);
+void Dot::renderParticles() {
+    // go through the particles
+    for (int i = 0; i < TOTAL_PARTICLES; ++i) {
+        // delete and replace dead particles
+        if (particles[i]->isDead()) {
+            delete particles[i];
+            particles[i] = new Particle(mPosX, mPosY);
+        }
     }
 
-    // move window forward
-    SDL_RaiseWindow(mWindow);
-}
-
-void LWindow::render() {
-    if (!mMinimized) {
-        // clear screen
-        SDL_SetRenderDrawColor(mRenderer, 255, 255, 255, 255);
-        SDL_RenderClear(mRenderer);
-
-        // update screen
-        SDL_RenderPresent(mRenderer);
+    // show particles
+    for (int i = 0; i < TOTAL_PARTICLES; ++i) {
+        particles[i]->render();
     }
 }
-
-int LWindow::getWidth() { return mWidth; }
-
-int LWindow::getHeight() { return mHeight; }
-
-bool LWindow::hasMouseFocus() { return mMouseFocus; }
-
-bool LWindow::hasKeyboardFocus() { return mKeyboardFocus; }
-
-bool LWindow::isMinimized() { return mMinimized; }
-
-bool LWindow::isShown() { return mShown; }
