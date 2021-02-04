@@ -56,6 +56,7 @@ class LTexture {
     bool unlockTexture();
     void* getPixels();
     int getPitch();
+    Uint32 getPixel32(unsigned int x, unsigned int y);
 
    private:
     // the actual hardware texture
@@ -66,6 +67,29 @@ class LTexture {
     // image dimensions
     int mWidth;
     int mHeight;
+};
+
+// our bitmap font
+class LBitmapFont {
+   public:
+    // the default constructor
+    LBitmapFont();
+
+    // generates the font
+    bool buildFont(LTexture* bitmap);
+
+    // shows the text
+    void renderText(int x, int y, std::string text);
+
+   private:
+    // the font texture
+    LTexture* mBitmap;
+
+    // the individual characters in the surface
+    SDL_Rect mChars[256];
+
+    // spacing variables
+    int mNewLine, mSpace;
 };
 
 // starts up SDL and creates a window
@@ -82,7 +106,8 @@ SDL_Window* gWindow = NULL;
 SDL_Renderer* gRenderer = NULL;
 
 // scene textures
-LTexture gFooTexture;
+LTexture gFontTexture;
+LBitmapFont gBitmapFont;
 
 // font
 TTF_Font* gFont;
@@ -143,41 +168,12 @@ bool loadMedia() {
     bool success = true;
 
     // load foo texture
-    if (!gFooTexture.loadFromFile("./resources/images/foo.png")) {
+    if (!gFontTexture.loadFromFile("./resources/images/lazyfont.png")){
         std::cout << "Failed to load foo texture!\n";
         success = false;
-    } else {
-        // lock texture
-        if (!gFooTexture.lockTexture()) {
-            std::cout << "Unable to lock Foo texture!\n";
-        } 
-        else {
-            // manual color key
-            // allocate format from window
-            Uint32 format = SDL_GetWindowPixelFormat(gWindow);
-            SDL_PixelFormat* mappingFormat = SDL_AllocFormat(format);
-
-            // get pixel data
-            Uint32* pixels = (Uint32*)gFooTexture.getPixels();
-            int pixelCount = (gFooTexture.getPitch() / 4) * gFooTexture.getHeight();
-
-            // map colors
-            Uint32 colorKey = SDL_MapRGB(mappingFormat, 0, 255, 255);
-            Uint32 transparent = SDL_MapRGBA(mappingFormat, 255, 255, 255, 0);
-
-            // color key pixels
-            for (int i = 0; i < pixelCount; ++i) {
-                if (pixels[i] == colorKey) {
-                    pixels[i] = transparent;
-                }
-            }
-
-            // unlock texture
-            gFooTexture.unlockTexture();
-
-            // free format
-            SDL_FreeFormat(mappingFormat);
-        }
+    }
+    else {
+        gBitmapFont.buildFont(&gFontTexture);
     }
 
     return success;
@@ -185,7 +181,7 @@ bool loadMedia() {
 
 void close() {
     // destroy data
-    gFooTexture.free();
+    gFontTexture.free();
 
     // destroy windows
     SDL_DestroyRenderer(gRenderer);
@@ -218,6 +214,7 @@ int main(int argc, char* argv[]) {
             // event handler
             SDL_Event e;
 
+
             // while application is running
             while (!quit) {
                 // handle events on queue
@@ -238,8 +235,7 @@ int main(int argc, char* argv[]) {
                 SDL_SetRenderDrawColor(gRenderer, 255, 255, 255, 255);
                 SDL_RenderClear(gRenderer);
 
-                gFooTexture.render((SCREEN_WIDTH - gFooTexture.getWidth()) / 2,
-                                   (SCREEN_HEIGHT - gFooTexture.getHeight()) / 2);
+                gBitmapFont.renderText(0, 0, "Bitmap Font:\nABCDEFGHIJKLMNOPQRSTUVWXYZ\nabcedfghijklmnopqrstuvwxyz\n0123456789");
 
                 // update the screen
                 SDL_RenderPresent(gRenderer);
@@ -288,29 +284,58 @@ bool LTexture::loadFromFile(std::string path) {
             if (newTexture == NULL) {
                 std::cout << "Unable to create blank texture! SDL Error: " << SDL_GetError() << "\n";
             } else {
+                // enable blending on texture
+                SDL_SetTextureBlendMode(newTexture, SDL_BLENDMODE_BLEND);
+
                 // lock texture for manupulation
                 SDL_LockTexture(newTexture, NULL, &mPixels, &mPitch);
 
                 // copy loaded/formatted surface pixels
                 memcpy(mPixels, formattedSurface->pixels, formattedSurface->pitch * formattedSurface->h);
 
-                // unlock texture to update
-                SDL_UnlockTexture(newTexture);
-                mPixels = NULL;
-
                 // get image dimensions
                 mWidth = formattedSurface->w;
                 mHeight = formattedSurface->h;
+
+                // get pixel data in editable format
+                Uint32* pixels = (Uint32*)mPixels;
+                int pixelCount = (mPitch / 4) * mHeight;
+
+                // map colors
+                Uint32 colorKey = SDL_MapRGB(formattedSurface->format, 0, 255, 255);
+                Uint32 transparent = SDL_MapRGBA(formattedSurface->format, 255, 255, 255, 0);
+
+                // color key pixels
+                for (int i = 0; i < pixelCount; ++i) {
+                    if (pixels[i] == colorKey) {
+                        pixels[i] = transparent;
+                    }
+                }
+
+                // unlock texture to update
+                SDL_UnlockTexture(newTexture);
+                mPixels = NULL;
             }
 
             // get rid of old formatted surface
             SDL_FreeSurface(formattedSurface);
         }
+
+        // get rid of old loaded surface
+        SDL_FreeSurface(loadedSurface);
     }
 
     // return success
     mTexture = newTexture;
     return mTexture != NULL;
+}
+
+Uint32 LTexture::getPixel32(unsigned int x, unsigned int y) {
+    // convert the pixels to 32 bit
+    Uint32* pixels = (Uint32*)mPixels;
+
+    // get the pixel requested
+    return pixels[(y * (mPitch / 4)) + x];
 }
 
 bool LTexture::lockTexture() {
@@ -420,3 +445,191 @@ void LTexture::render(int x, int y, SDL_Rect* clip, double angle, SDL_Point* cen
 int LTexture::getWidth() { return mWidth; }
 
 int LTexture::getHeight() { return mHeight; }
+
+LBitmapFont::LBitmapFont() {
+    // initialize variables
+    mBitmap = NULL;
+    mNewLine = 0;
+    mSpace = 0;
+}
+
+bool LBitmapFont::buildFont(LTexture* bitmap) {
+    bool success = true;
+
+    // lock pixels for access
+    if (!bitmap->lockTexture()) {
+        std::cout << "Unable to lock bitmap font texture!\n";
+        success = false;
+    } else {
+        // set background color
+        Uint32 bgColor = bitmap->getPixel32(0, 0);
+
+        // set the cell dimensions
+        int cellW = bitmap->getWidth() / 16;
+        int cellH = bitmap->getHeight() / 16;
+
+        // new line variables
+        int top = cellH;
+        int baseA = cellH;
+
+        // the current character we're setting
+        int currentChar = 0;
+
+        // go through the cell rows
+        for (int rows = 0; rows < 16; ++rows) {
+            // go through the cell columns
+            for (int cols = 0; cols < 16; ++cols) {
+                // set the character offset
+                mChars[currentChar].x = cellW * cols;
+                mChars[currentChar].y = cellH * rows;
+
+                // set the dimensions of the character
+                mChars[currentChar].w = cellW;
+                mChars[currentChar].h = cellH;
+
+                // find left side of glyph
+                // go through pixel columns
+                for (int pCol = 0; pCol < cellW; ++pCol) {
+                    // go through pixel rows
+                    for (int pRow = 0; pRow < cellH; ++pRow) {
+                        // get the pixel offsets
+                        int pX = (cellW * cols) + pCol;
+                        int pY = (cellH * rows) + pRow;
+
+                        // if a non colorkey pixel is found
+                        if (bitmap->getPixel32(pX, pY) != bgColor) {
+                            // set the xoffset
+                            mChars[currentChar].x = pX;
+
+                            // break the loops
+                            pCol = cellW;
+                            pRow = cellH;
+                        }
+                    }
+                }
+
+                // find the left side of the glyph
+                // go through pixel columns
+                for (int pColW = cellW - 1; pColW >= 0; --pColW) {
+                    // go through pixel rows
+                    for (int pRowW = 0; pRowW < cellH; ++pRowW) {
+                        // get the pixel offsets
+                        int pX = (cellW * cols) + pColW;
+                        int pY = (cellH * rows) + pRowW;
+
+                        // if a non colorkey pixel is found
+                        if (bitmap->getPixel32(pX, pY) != bgColor) {
+                            // set the width
+                            mChars[currentChar].w = (pX - mChars[currentChar].x) + 1;
+
+                            // break the loops
+                            pColW = -1;
+                            pRowW = cellH;
+                        }
+                    }
+                }
+
+                // find the top
+                // go through pixel rows
+                for (int pRow = 0; pRow < cellH; ++pRow) {
+                    // go through pixel columns
+                    for(int pCol = 0; pCol < cellW; ++pCol) {
+                        // get the pixel offsets
+                        int pX = (cellW * cols) + pCol;
+                        int pY = (cellH * rows) + pRow;
+
+                        // if a non colorkey pixel is found
+                        if (bitmap->getPixel32(pX, pY) != bgColor) {
+                            // if new top is found
+                            if (pRow < top) {
+                                top = pRow;
+                            }
+
+                            // break the loops
+                            pCol = cellW;
+                            pRow = cellH;
+                        }
+                    }
+                }
+
+                // find bottom of A glyph
+                if (currentChar == 'A') {
+                    // go through pixel rows
+                    for (int pRow = cellH -1; pRow >= 0; --pRow) {
+                        // go through pixel columns
+                        for (int pCol = 0; pCol < cellW; ++pCol) {
+                            // get the pixel offsets
+                            int pX = (cellW * cols) + pCol;
+                            int pY = (cellH * rows) + pRow;
+
+                            // if a non colorkey pixel is found
+                            if (bitmap->getPixel32(pX, pY) != bgColor) {
+                                // bottom of A glyph is found
+                                baseA = pRow;
+
+                                // break the loops
+                                pCol = cellW;
+                                pRow = -1;
+                            }
+                        }
+                    }
+                }
+                // go to the next character cell
+                ++currentChar;
+            }
+        }
+        // calculate space
+        mSpace = cellW / 2;
+
+        // calculate new line
+        mNewLine = baseA - top;
+
+        // lop of excess top pixels
+        for (int i = 0; i < 256; ++i) {
+            mChars[i].y += top;
+            mChars[i].h -= top;
+        }
+
+        bitmap->unlockTexture();
+        mBitmap = bitmap;
+    }
+
+    return success;
+}
+
+void LBitmapFont::renderText(int x, int y, std::string text) {
+    // if the font has been built
+    if (mBitmap != NULL) {
+        // temp offsets
+        int curX = x, curY = y;
+
+        // go through the text
+        for (int i = 0; i < text.length(); ++i) {
+            // if the current character is a space
+            if (text[i] == ' ') {
+                // move over
+                curX += mSpace;
+            }
+
+            // if the current character is a newline
+            else if(text[i] == '\n') {
+                // move down
+                curY += mNewLine;
+
+                // move back
+                curX = x;
+            }
+
+            else {
+                // get the ASCII value of the character
+                int ascii = (unsigned char)text[i];
+
+                // show the character
+                mBitmap->render(curX, curY, &mChars[ascii]);
+
+                // move over the width of the character with one pixel of padding
+                curX +=mChars[ascii].w + 1;
+            }
+        }
+    }
+}
