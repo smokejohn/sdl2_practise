@@ -31,6 +31,9 @@ class LTexture {
     bool loadFromRenderedText(std::string textureText, SDL_Color textColor);
 #endif
 
+    // creates blank texture
+    bool createBlank(int width, int height);
+
     // deallocates texture
     void free();
 
@@ -55,6 +58,7 @@ class LTexture {
     bool lockTexture();
     bool unlockTexture();
     void* getPixels();
+    void copyPixels(void* pixels);
     int getPitch();
     Uint32 getPixel32(unsigned int x, unsigned int y);
 
@@ -69,27 +73,26 @@ class LTexture {
     int mHeight;
 };
 
-// our bitmap font
-class LBitmapFont {
+// a test animation stream
+class DataStream {
    public:
-    // the default constructor
-    LBitmapFont();
+    // initializes internals
+    DataStream();
 
-    // generates the font
-    bool buildFont(LTexture* bitmap);
+    // loads initial data
+    bool loadMedia();
 
-    // shows the text
-    void renderText(int x, int y, std::string text);
+    // deallocator
+    void free();
+
+    // gets current frame data
+    void* getBuffer();
 
    private:
-    // the font texture
-    LTexture* mBitmap;
-
-    // the individual characters in the surface
-    SDL_Rect mChars[256];
-
-    // spacing variables
-    int mNewLine, mSpace;
+    // internal data
+    SDL_Surface* mImages[4];
+    int mCurrentImage;
+    int mDelayFrames;
 };
 
 // starts up SDL and creates a window
@@ -106,8 +109,10 @@ SDL_Window* gWindow = NULL;
 SDL_Renderer* gRenderer = NULL;
 
 // scene textures
-LTexture gFontTexture;
-LBitmapFont gBitmapFont;
+LTexture gStreamingTexture;
+
+// animation stream
+DataStream gDataStream;
 
 // font
 TTF_Font* gFont;
@@ -167,13 +172,16 @@ bool loadMedia() {
     // loading success flag
     bool success = true;
 
-    // load foo texture
-    if (!gFontTexture.loadFromFile("./resources/images/lazyfont.png")){
-        std::cout << "Failed to load foo texture!\n";
+    // load blank texture
+    if (!gStreamingTexture.createBlank(64, 205)) {
+        std::cout << "Failed to creat streaming texture!\n";
         success = false;
     }
-    else {
-        gBitmapFont.buildFont(&gFontTexture);
+
+    // load data stream
+    if (!gDataStream.loadMedia()) {
+        std::cout << "Unable to load data stream!\n";
+        success = false;
     }
 
     return success;
@@ -181,7 +189,8 @@ bool loadMedia() {
 
 void close() {
     // destroy data
-    gFontTexture.free();
+    gStreamingTexture.free();
+    gDataStream.free();
 
     // destroy windows
     SDL_DestroyRenderer(gRenderer);
@@ -214,7 +223,6 @@ int main(int argc, char* argv[]) {
             // event handler
             SDL_Event e;
 
-
             // while application is running
             while (!quit) {
                 // handle events on queue
@@ -235,7 +243,14 @@ int main(int argc, char* argv[]) {
                 SDL_SetRenderDrawColor(gRenderer, 255, 255, 255, 255);
                 SDL_RenderClear(gRenderer);
 
-                gBitmapFont.renderText(0, 0, "Bitmap Font:\nABCDEFGHIJKLMNOPQRSTUVWXYZ\nabcedfghijklmnopqrstuvwxyz\n0123456789");
+                // copy frame from buffer
+                gStreamingTexture.lockTexture();
+                gStreamingTexture.copyPixels(gDataStream.getBuffer());
+                gStreamingTexture.unlockTexture();
+
+                // render frame
+                gStreamingTexture.render((SCREEN_WIDTH - gStreamingTexture.getWidth()) / 2,
+                                         (SCREEN_HEIGHT - gStreamingTexture.getHeight()) / 2);
 
                 // update the screen
                 SDL_RenderPresent(gRenderer);
@@ -411,6 +426,8 @@ void LTexture::free() {
         mTexture = NULL;
         mWidth = 0;
         mHeight = 0;
+        mPixels = NULL;
+        mPitch = 0;
     }
 }
 
@@ -446,190 +463,75 @@ int LTexture::getWidth() { return mWidth; }
 
 int LTexture::getHeight() { return mHeight; }
 
-LBitmapFont::LBitmapFont() {
-    // initialize variables
-    mBitmap = NULL;
-    mNewLine = 0;
-    mSpace = 0;
+bool LTexture::createBlank(int width, int height) {
+    // create uninitialized texture
+    mTexture = SDL_CreateTexture(gRenderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_STREAMING, width, height);
+    if (mTexture == NULL) {
+        std::cout << "Unable to create blank texture! SDL Error: " << SDL_GetError() << "\n";
+    } else {
+        mWidth = width;
+        mHeight = height;
+    }
+
+    return mTexture != NULL;
 }
 
-bool LBitmapFont::buildFont(LTexture* bitmap) {
+void LTexture::copyPixels(void* pixels) {
+    // texture is locked
+    if (mPixels != NULL) {
+        // copy the locked pixels
+        memcpy(mPixels, pixels, mPitch * mHeight);
+    }
+}
+
+DataStream::DataStream() {
+    mImages[0] = NULL;
+    mImages[1] = NULL;
+    mImages[2] = NULL;
+    mImages[3] = NULL;
+
+    mCurrentImage = 0;
+    mDelayFrames = 4;
+}
+
+bool DataStream::loadMedia() {
     bool success = true;
 
-    // lock pixels for access
-    if (!bitmap->lockTexture()) {
-        std::cout << "Unable to lock bitmap font texture!\n";
-        success = false;
-    } else {
-        // set background color
-        Uint32 bgColor = bitmap->getPixel32(0, 0);
+    for (int i = 0; i < 4; ++i) {
+        char path[64] = "";
+        sprintf(path, "./resources/images/foo_walk_%d.png", i);
 
-        // set the cell dimensions
-        int cellW = bitmap->getWidth() / 16;
-        int cellH = bitmap->getHeight() / 16;
-
-        // new line variables
-        int top = cellH;
-        int baseA = cellH;
-
-        // the current character we're setting
-        int currentChar = 0;
-
-        // go through the cell rows
-        for (int rows = 0; rows < 16; ++rows) {
-            // go through the cell columns
-            for (int cols = 0; cols < 16; ++cols) {
-                // set the character offset
-                mChars[currentChar].x = cellW * cols;
-                mChars[currentChar].y = cellH * rows;
-
-                // set the dimensions of the character
-                mChars[currentChar].w = cellW;
-                mChars[currentChar].h = cellH;
-
-                // find left side of glyph
-                // go through pixel columns
-                for (int pCol = 0; pCol < cellW; ++pCol) {
-                    // go through pixel rows
-                    for (int pRow = 0; pRow < cellH; ++pRow) {
-                        // get the pixel offsets
-                        int pX = (cellW * cols) + pCol;
-                        int pY = (cellH * rows) + pRow;
-
-                        // if a non colorkey pixel is found
-                        if (bitmap->getPixel32(pX, pY) != bgColor) {
-                            // set the xoffset
-                            mChars[currentChar].x = pX;
-
-                            // break the loops
-                            pCol = cellW;
-                            pRow = cellH;
-                        }
-                    }
-                }
-
-                // find the left side of the glyph
-                // go through pixel columns
-                for (int pColW = cellW - 1; pColW >= 0; --pColW) {
-                    // go through pixel rows
-                    for (int pRowW = 0; pRowW < cellH; ++pRowW) {
-                        // get the pixel offsets
-                        int pX = (cellW * cols) + pColW;
-                        int pY = (cellH * rows) + pRowW;
-
-                        // if a non colorkey pixel is found
-                        if (bitmap->getPixel32(pX, pY) != bgColor) {
-                            // set the width
-                            mChars[currentChar].w = (pX - mChars[currentChar].x) + 1;
-
-                            // break the loops
-                            pColW = -1;
-                            pRowW = cellH;
-                        }
-                    }
-                }
-
-                // find the top
-                // go through pixel rows
-                for (int pRow = 0; pRow < cellH; ++pRow) {
-                    // go through pixel columns
-                    for(int pCol = 0; pCol < cellW; ++pCol) {
-                        // get the pixel offsets
-                        int pX = (cellW * cols) + pCol;
-                        int pY = (cellH * rows) + pRow;
-
-                        // if a non colorkey pixel is found
-                        if (bitmap->getPixel32(pX, pY) != bgColor) {
-                            // if new top is found
-                            if (pRow < top) {
-                                top = pRow;
-                            }
-
-                            // break the loops
-                            pCol = cellW;
-                            pRow = cellH;
-                        }
-                    }
-                }
-
-                // find bottom of A glyph
-                if (currentChar == 'A') {
-                    // go through pixel rows
-                    for (int pRow = cellH -1; pRow >= 0; --pRow) {
-                        // go through pixel columns
-                        for (int pCol = 0; pCol < cellW; ++pCol) {
-                            // get the pixel offsets
-                            int pX = (cellW * cols) + pCol;
-                            int pY = (cellH * rows) + pRow;
-
-                            // if a non colorkey pixel is found
-                            if (bitmap->getPixel32(pX, pY) != bgColor) {
-                                // bottom of A glyph is found
-                                baseA = pRow;
-
-                                // break the loops
-                                pCol = cellW;
-                                pRow = -1;
-                            }
-                        }
-                    }
-                }
-                // go to the next character cell
-                ++currentChar;
-            }
-        }
-        // calculate space
-        mSpace = cellW / 2;
-
-        // calculate new line
-        mNewLine = baseA - top;
-
-        // lop of excess top pixels
-        for (int i = 0; i < 256; ++i) {
-            mChars[i].y += top;
-            mChars[i].h -= top;
+        SDL_Surface* loadedSurface = IMG_Load(path);
+        if (loadedSurface == NULL) {
+            std::cout << "Unable to load " << path << "! SDL_image error: " << IMG_GetError() << "\n";
+            success = false;
+        } else {
+            mImages[i] = SDL_ConvertSurfaceFormat(loadedSurface, SDL_PIXELFORMAT_RGBA8888, 0);
         }
 
-        bitmap->unlockTexture();
-        mBitmap = bitmap;
+        SDL_FreeSurface(loadedSurface);
     }
 
     return success;
 }
 
-void LBitmapFont::renderText(int x, int y, std::string text) {
-    // if the font has been built
-    if (mBitmap != NULL) {
-        // temp offsets
-        int curX = x, curY = y;
-
-        // go through the text
-        for (int i = 0; i < text.length(); ++i) {
-            // if the current character is a space
-            if (text[i] == ' ') {
-                // move over
-                curX += mSpace;
-            }
-
-            // if the current character is a newline
-            else if(text[i] == '\n') {
-                // move down
-                curY += mNewLine;
-
-                // move back
-                curX = x;
-            }
-
-            else {
-                // get the ASCII value of the character
-                int ascii = (unsigned char)text[i];
-
-                // show the character
-                mBitmap->render(curX, curY, &mChars[ascii]);
-
-                // move over the width of the character with one pixel of padding
-                curX +=mChars[ascii].w + 1;
-            }
-        }
+void DataStream::free() {
+    for (int i = 0; i < 4; ++i) {
+        SDL_FreeSurface(mImages[i]);
     }
+}
+
+void* DataStream::getBuffer() {
+    --mDelayFrames;
+
+    if (mDelayFrames == 0) {
+        ++mCurrentImage;
+        mDelayFrames = 4;
+    }
+
+    if (mCurrentImage == 4) {
+        mCurrentImage = 0;
+    }
+
+    return mImages[mCurrentImage]->pixels;
 }
