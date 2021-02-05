@@ -32,7 +32,7 @@ class LTexture {
 #endif
 
     // creates blank texture
-    bool createBlank(int width, int height);
+    bool createBlank(int width, int height, SDL_TextureAccess = SDL_TEXTUREACCESS_STREAMING);
 
     // deallocates texture
     void free();
@@ -49,6 +49,9 @@ class LTexture {
     // renders texture at given point
     void render(int x, int y, SDL_Rect* clip = NULL, double angle = 0.0, SDL_Point* center = NULL,
                 SDL_RendererFlip flip = SDL_FLIP_NONE);
+
+    // set self as render target
+    void setAsRenderTarget();
 
     // gets image dimensions
     int getWidth();
@@ -73,28 +76,6 @@ class LTexture {
     int mHeight;
 };
 
-// a test animation stream
-class DataStream {
-   public:
-    // initializes internals
-    DataStream();
-
-    // loads initial data
-    bool loadMedia();
-
-    // deallocator
-    void free();
-
-    // gets current frame data
-    void* getBuffer();
-
-   private:
-    // internal data
-    SDL_Surface* mImages[4];
-    int mCurrentImage;
-    int mDelayFrames;
-};
-
 // starts up SDL and creates a window
 bool init();
 // loads media
@@ -109,10 +90,7 @@ SDL_Window* gWindow = NULL;
 SDL_Renderer* gRenderer = NULL;
 
 // scene textures
-LTexture gStreamingTexture;
-
-// animation stream
-DataStream gDataStream;
+LTexture gTargetTexture;
 
 // font
 TTF_Font* gFont;
@@ -173,14 +151,8 @@ bool loadMedia() {
     bool success = true;
 
     // load blank texture
-    if (!gStreamingTexture.createBlank(64, 205)) {
-        std::cout << "Failed to creat streaming texture!\n";
-        success = false;
-    }
-
-    // load data stream
-    if (!gDataStream.loadMedia()) {
-        std::cout << "Unable to load data stream!\n";
+    if (!gTargetTexture.createBlank(SCREEN_WIDTH, SCREEN_HEIGHT, SDL_TEXTUREACCESS_TARGET)) {
+        std::cout << "Failed to creat target texture!\n";
         success = false;
     }
 
@@ -189,8 +161,7 @@ bool loadMedia() {
 
 void close() {
     // destroy data
-    gStreamingTexture.free();
-    gDataStream.free();
+    gTargetTexture.free();
 
     // destroy windows
     SDL_DestroyRenderer(gRenderer);
@@ -223,6 +194,10 @@ int main(int argc, char* argv[]) {
             // event handler
             SDL_Event e;
 
+            // rotation variables
+            double angle = 0;
+            SDL_Point screenCenter = {SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2};
+
             // while application is running
             while (!quit) {
                 // handle events on queue
@@ -239,18 +214,45 @@ int main(int argc, char* argv[]) {
                     }
                 }
 
+                // rotate
+                angle += 2;
+                if (angle > 360) {
+                    angle -= 360;
+                }
+
+                // set self as render target
+                gTargetTexture.setAsRenderTarget();
+
                 // clear screen
                 SDL_SetRenderDrawColor(gRenderer, 255, 255, 255, 255);
                 SDL_RenderClear(gRenderer);
 
-                // copy frame from buffer
-                gStreamingTexture.lockTexture();
-                gStreamingTexture.copyPixels(gDataStream.getBuffer());
-                gStreamingTexture.unlockTexture();
+                // render red filled quad
+                SDL_Rect fillRect = {SCREEN_WIDTH / 4, SCREEN_HEIGHT / 4, SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2};
+                SDL_SetRenderDrawColor(gRenderer, 255, 0, 0, 255);
+                SDL_RenderFillRect(gRenderer, &fillRect);
 
-                // render frame
-                gStreamingTexture.render((SCREEN_WIDTH - gStreamingTexture.getWidth()) / 2,
-                                         (SCREEN_HEIGHT - gStreamingTexture.getHeight()) / 2);
+                // render green outlined quad
+                SDL_Rect outlineRect = {SCREEN_WIDTH / 6, SCREEN_HEIGHT / 6, SCREEN_WIDTH * 2 / 3,
+                                        SCREEN_HEIGHT * 2 / 3};
+                SDL_SetRenderDrawColor(gRenderer, 0, 255, 0, 255);
+                SDL_RenderDrawRect(gRenderer, &outlineRect);
+
+                // draw blue horizontal line
+                SDL_SetRenderDrawColor(gRenderer, 0, 0, 255, 255);
+                SDL_RenderDrawLine(gRenderer, 0, SCREEN_HEIGHT / 2, SCREEN_WIDTH, SCREEN_HEIGHT / 2);
+
+                // draw vertical line of yellow dots
+                SDL_SetRenderDrawColor(gRenderer, 255, 255, 0, 255);
+                for (int i = 0; i < SCREEN_HEIGHT; i += 4) {
+                    SDL_RenderDrawPoint(gRenderer, SCREEN_WIDTH / 2, i);
+                }
+
+                // reset render target
+                SDL_SetRenderTarget(gRenderer, NULL);
+
+                // show rendered to texture
+                gTargetTexture.render(0, 0, NULL, angle, &screenCenter);
 
                 // update the screen
                 SDL_RenderPresent(gRenderer);
@@ -463,9 +465,17 @@ int LTexture::getWidth() { return mWidth; }
 
 int LTexture::getHeight() { return mHeight; }
 
-bool LTexture::createBlank(int width, int height) {
+void LTexture::copyPixels(void* pixels) {
+    // texture is locked
+    if (mPixels != NULL) {
+        // copy the locked pixels
+        memcpy(mPixels, pixels, mPitch * mHeight);
+    }
+}
+
+bool LTexture::createBlank(int width, int height, SDL_TextureAccess access) {
     // create uninitialized texture
-    mTexture = SDL_CreateTexture(gRenderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_STREAMING, width, height);
+    mTexture = SDL_CreateTexture(gRenderer, SDL_PIXELFORMAT_RGBA8888, access, width, height);
     if (mTexture == NULL) {
         std::cout << "Unable to create blank texture! SDL Error: " << SDL_GetError() << "\n";
     } else {
@@ -476,62 +486,7 @@ bool LTexture::createBlank(int width, int height) {
     return mTexture != NULL;
 }
 
-void LTexture::copyPixels(void* pixels) {
-    // texture is locked
-    if (mPixels != NULL) {
-        // copy the locked pixels
-        memcpy(mPixels, pixels, mPitch * mHeight);
-    }
-}
-
-DataStream::DataStream() {
-    mImages[0] = NULL;
-    mImages[1] = NULL;
-    mImages[2] = NULL;
-    mImages[3] = NULL;
-
-    mCurrentImage = 0;
-    mDelayFrames = 4;
-}
-
-bool DataStream::loadMedia() {
-    bool success = true;
-
-    for (int i = 0; i < 4; ++i) {
-        char path[64] = "";
-        sprintf(path, "./resources/images/foo_walk_%d.png", i);
-
-        SDL_Surface* loadedSurface = IMG_Load(path);
-        if (loadedSurface == NULL) {
-            std::cout << "Unable to load " << path << "! SDL_image error: " << IMG_GetError() << "\n";
-            success = false;
-        } else {
-            mImages[i] = SDL_ConvertSurfaceFormat(loadedSurface, SDL_PIXELFORMAT_RGBA8888, 0);
-        }
-
-        SDL_FreeSurface(loadedSurface);
-    }
-
-    return success;
-}
-
-void DataStream::free() {
-    for (int i = 0; i < 4; ++i) {
-        SDL_FreeSurface(mImages[i]);
-    }
-}
-
-void* DataStream::getBuffer() {
-    --mDelayFrames;
-
-    if (mDelayFrames == 0) {
-        ++mCurrentImage;
-        mDelayFrames = 4;
-    }
-
-    if (mCurrentImage == 4) {
-        mCurrentImage = 0;
-    }
-
-    return mImages[mCurrentImage]->pixels;
+void LTexture::setAsRenderTarget() {
+    // make self render target
+    SDL_SetRenderTarget(gRenderer, mTexture);
 }
