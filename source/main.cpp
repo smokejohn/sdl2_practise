@@ -76,6 +76,63 @@ class LTexture {
     int mHeight;
 };
 
+// the application time based timer
+class LTimer {
+    public:
+        LTimer();
+
+        // the various clock actions
+        void start();
+        void stop();
+        void pause();
+        void unpause();
+
+        // gets the timer's time
+        Uint32 getTicks();
+
+        // checks the status of the timer
+        bool isStarted();
+        bool isPaused();
+
+    private:
+        // the ticks stored when the timer is running
+        Uint32 mStartTicks;
+
+        // the ticks stored when the timer is paused
+        Uint32 mPausedTicks;
+
+        // the timer status
+        bool mPaused;
+        bool mStarted;
+};
+
+// the dot that will move around the screen
+class Dot {
+    public:
+        // the dimensions of the dot
+        static const int DOT_WIDTH = 20;
+        static const int DOT_HEIGHT = 20;
+
+        // maximum axis velocity of the dot
+        static const int DOT_VEL = 640;
+
+        // initializes variables
+        Dot();
+
+        // takes key presses and adjusts the dot's velocity
+        void handleEvent(SDL_Event& e);
+
+        // moves the dot
+        void move(float timeStep);
+
+        // renders the dot to the screen
+        void render();
+
+    private:
+        float mPosX, mPosY;
+        float mVelX, mVelY;
+};
+
 // starts up SDL and creates a window
 bool init();
 // loads media
@@ -90,10 +147,130 @@ SDL_Window* gWindow = NULL;
 SDL_Renderer* gRenderer = NULL;
 
 // scene textures
-LTexture gTargetTexture;
+LTexture gDotTexture;
 
 // font
 TTF_Font* gFont;
+
+LTimer::LTimer() {
+    mPausedTicks = 0;
+    mStartTicks = 0;
+
+    mPaused = false;
+    mStarted = false;
+}
+
+void LTimer::start() {
+    mStarted = true;
+    mPaused = false;
+
+    mStartTicks = SDL_GetTicks();
+    mPausedTicks = 0;
+}
+
+void LTimer::stop() {
+    mStarted = false;
+    mPaused = false;
+
+    mStartTicks = 0;
+    mPausedTicks = 0;
+}
+
+void LTimer::pause() {
+    if (mStarted && !mPaused) {
+        mPaused = true;
+
+        mPausedTicks = SDL_GetTicks() - mStartTicks;
+        mStartTicks = 0;
+    }
+}
+
+void LTimer::unpause() {
+    if (mStarted && mPaused) {
+        mPaused = false;
+
+        mStartTicks = SDL_GetTicks() - mPausedTicks;
+        mPausedTicks = 0;
+    }
+}
+
+Uint32 LTimer::getTicks() {
+    // the actual time
+    Uint32 time = 0;
+
+    if (mStarted) {
+        if (mPaused) {
+            time = mPausedTicks;
+        }
+        else {
+            time = SDL_GetTicks() - mStartTicks;
+        }
+    }
+    return time;
+}
+
+bool LTimer::isStarted() {
+    return mStarted;
+}
+
+bool LTimer::isPaused() {
+    return mStarted && mPaused ;
+}
+
+Dot::Dot() {
+    mPosX = 0.f;
+    mPosY = 0.f;
+    mVelX = 0.f;
+    mVelY = 0.f;
+}
+
+void Dot::move(float timeStep) {
+    // move the dot left or right
+    mPosX += mVelX * timeStep;
+
+    // if the dot went too far to the left or right
+    if (mPosX < 0) {
+        mPosX = 0;
+    }
+    else if (mPosX > SCREEN_WIDTH - DOT_WIDTH) {
+        mPosX = SCREEN_WIDTH - DOT_WIDTH;
+    }
+
+    mPosY += mVelY * timeStep;
+
+    // if the dot went too far up or down
+    if (mPosY < 0) {
+        mPosY = 0;
+    }
+    else if (mPosY > SCREEN_HEIGHT - DOT_HEIGHT) {
+        mPosY = SCREEN_HEIGHT - DOT_HEIGHT;
+    }
+}
+
+void Dot::render() {
+    // show the dot
+    gDotTexture.render((int)mPosX, (int)mPosY);
+}
+
+void Dot::handleEvent(SDL_Event& e) {
+    // add velocity on press
+    if (e.type == SDL_KEYDOWN && e.key.repeat == 0) {
+        switch (e.key.keysym.sym) {
+            case SDLK_UP: mVelY -= DOT_VEL; break;
+            case SDLK_DOWN: mVelY += DOT_VEL; break;
+            case SDLK_LEFT: mVelX -= DOT_VEL; break;
+            case SDLK_RIGHT: mVelX += DOT_VEL; break;
+        }
+    }
+    else if (e.type == SDL_KEYUP && e.key.repeat == 0) {
+        switch (e.key.keysym.sym) {
+            case SDLK_UP: mVelY += DOT_VEL; break;
+            case SDLK_DOWN: mVelY -= DOT_VEL; break;
+            case SDLK_LEFT: mVelX += DOT_VEL; break;
+            case SDLK_RIGHT: mVelX -= DOT_VEL; break;
+        }
+    }
+}
 
 bool init() {
     // initialization flag
@@ -150,9 +327,9 @@ bool loadMedia() {
     // loading success flag
     bool success = true;
 
-    // load blank texture
-    if (!gTargetTexture.createBlank(SCREEN_WIDTH, SCREEN_HEIGHT, SDL_TEXTUREACCESS_TARGET)) {
-        std::cout << "Failed to creat target texture!\n";
+    // load dot texture
+    if (!gDotTexture.loadFromFile("./resources/images/dot.bmp")) {
+        std::cout << "Unable to load dot texture! SDL Error: " << SDL_GetError() << "\n";
         success = false;
     }
 
@@ -161,7 +338,7 @@ bool loadMedia() {
 
 void close() {
     // destroy data
-    gTargetTexture.free();
+    gDotTexture.free();
 
     // destroy windows
     SDL_DestroyRenderer(gRenderer);
@@ -182,7 +359,7 @@ int main(int argc, char* argv[]) {
     if (!init()) {
         std::cout << "Failed to initialize!\n";
     } else {
-        // the level tiles
+
 
         // load media
         if (!loadMedia()) {
@@ -193,10 +370,12 @@ int main(int argc, char* argv[]) {
 
             // event handler
             SDL_Event e;
+            
+            // the dot
+            Dot dot;
 
-            // rotation variables
-            double angle = 0;
-            SDL_Point screenCenter = {SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2};
+            // keeps track of time between steps
+            LTimer stepTimer;
 
             // while application is running
             while (!quit) {
@@ -212,47 +391,24 @@ int main(int argc, char* argv[]) {
                             quit = true;
                         }
                     }
+
+                    dot.handleEvent(e);
                 }
 
-                // rotate
-                angle += 2;
-                if (angle > 360) {
-                    angle -= 360;
-                }
+                // calculate time step
+                float timeStep = stepTimer.getTicks() / 1000.f;
 
-                // set self as render target
-                gTargetTexture.setAsRenderTarget();
+                // move the dot
+                dot.move(timeStep);
+
+                // restart the step timer
+                stepTimer.start();
 
                 // clear screen
                 SDL_SetRenderDrawColor(gRenderer, 255, 255, 255, 255);
                 SDL_RenderClear(gRenderer);
 
-                // render red filled quad
-                SDL_Rect fillRect = {SCREEN_WIDTH / 4, SCREEN_HEIGHT / 4, SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2};
-                SDL_SetRenderDrawColor(gRenderer, 255, 0, 0, 255);
-                SDL_RenderFillRect(gRenderer, &fillRect);
-
-                // render green outlined quad
-                SDL_Rect outlineRect = {SCREEN_WIDTH / 6, SCREEN_HEIGHT / 6, SCREEN_WIDTH * 2 / 3,
-                                        SCREEN_HEIGHT * 2 / 3};
-                SDL_SetRenderDrawColor(gRenderer, 0, 255, 0, 255);
-                SDL_RenderDrawRect(gRenderer, &outlineRect);
-
-                // draw blue horizontal line
-                SDL_SetRenderDrawColor(gRenderer, 0, 0, 255, 255);
-                SDL_RenderDrawLine(gRenderer, 0, SCREEN_HEIGHT / 2, SCREEN_WIDTH, SCREEN_HEIGHT / 2);
-
-                // draw vertical line of yellow dots
-                SDL_SetRenderDrawColor(gRenderer, 255, 255, 0, 255);
-                for (int i = 0; i < SCREEN_HEIGHT; i += 4) {
-                    SDL_RenderDrawPoint(gRenderer, SCREEN_WIDTH / 2, i);
-                }
-
-                // reset render target
-                SDL_SetRenderTarget(gRenderer, NULL);
-
-                // show rendered to texture
-                gTargetTexture.render(0, 0, NULL, angle, &screenCenter);
+                dot.render();
 
                 // update the screen
                 SDL_RenderPresent(gRenderer);
