@@ -78,60 +78,63 @@ class LTexture {
 
 // the application time based timer
 class LTimer {
-    public:
-        LTimer();
+   public:
+    LTimer();
 
-        // the various clock actions
-        void start();
-        void stop();
-        void pause();
-        void unpause();
+    // the various clock actions
+    void start();
+    void stop();
+    void pause();
+    void unpause();
 
-        // gets the timer's time
-        Uint32 getTicks();
+    // gets the timer's time
+    Uint32 getTicks();
 
-        // checks the status of the timer
-        bool isStarted();
-        bool isPaused();
+    // checks the status of the timer
+    bool isStarted();
+    bool isPaused();
 
-    private:
-        // the ticks stored when the timer is running
-        Uint32 mStartTicks;
+   private:
+    // the ticks stored when the timer is running
+    Uint32 mStartTicks;
 
-        // the ticks stored when the timer is paused
-        Uint32 mPausedTicks;
+    // the ticks stored when the timer is paused
+    Uint32 mPausedTicks;
 
-        // the timer status
-        bool mPaused;
-        bool mStarted;
+    // the timer status
+    bool mPaused;
+    bool mStarted;
 };
 
 // the dot that will move around the screen
 class Dot {
-    public:
-        // the dimensions of the dot
-        static const int DOT_WIDTH = 20;
-        static const int DOT_HEIGHT = 20;
+   public:
+    // the dimensions of the dot
+    static const int DOT_WIDTH = 20;
+    static const int DOT_HEIGHT = 20;
 
-        // maximum axis velocity of the dot
-        static const int DOT_VEL = 640;
+    // maximum axis velocity of the dot
+    static const int DOT_VEL = 640;
 
-        // initializes variables
-        Dot();
+    // initializes variables
+    Dot();
 
-        // takes key presses and adjusts the dot's velocity
-        void handleEvent(SDL_Event& e);
+    // takes key presses and adjusts the dot's velocity
+    void handleEvent(SDL_Event& e);
 
-        // moves the dot
-        void move(float timeStep);
+    // moves the dot
+    void move(float timeStep);
 
-        // renders the dot to the screen
-        void render();
+    // renders the dot to the screen
+    void render();
 
-    private:
-        float mPosX, mPosY;
-        float mVelX, mVelY;
+   private:
+    float mPosX, mPosY;
+    float mVelX, mVelY;
 };
+
+// our test callback function
+Uint32 callback(Uint32 interval, void* param);
 
 // starts up SDL and creates a window
 bool init();
@@ -147,10 +150,16 @@ SDL_Window* gWindow = NULL;
 SDL_Renderer* gRenderer = NULL;
 
 // scene textures
-LTexture gDotTexture;
+LTexture gSplashTexture;
 
 // font
 TTF_Font* gFont;
+
+Uint32 callback(Uint32 interval, void* param) {
+    // print callback message
+    std::cout << "Callback called back with message: " << (char*)param << std::endl;
+    return 0;
+}
 
 LTimer::LTimer() {
     mPausedTicks = 0;
@@ -201,21 +210,16 @@ Uint32 LTimer::getTicks() {
     if (mStarted) {
         if (mPaused) {
             time = mPausedTicks;
-        }
-        else {
+        } else {
             time = SDL_GetTicks() - mStartTicks;
         }
     }
     return time;
 }
 
-bool LTimer::isStarted() {
-    return mStarted;
-}
+bool LTimer::isStarted() { return mStarted; }
 
-bool LTimer::isPaused() {
-    return mStarted && mPaused ;
-}
+bool LTimer::isPaused() { return mStarted && mPaused; }
 
 Dot::Dot() {
     mPosX = 0.f;
@@ -231,8 +235,7 @@ void Dot::move(float timeStep) {
     // if the dot went too far to the left or right
     if (mPosX < 0) {
         mPosX = 0;
-    }
-    else if (mPosX > SCREEN_WIDTH - DOT_WIDTH) {
+    } else if (mPosX > SCREEN_WIDTH - DOT_WIDTH) {
         mPosX = SCREEN_WIDTH - DOT_WIDTH;
     }
 
@@ -241,33 +244,47 @@ void Dot::move(float timeStep) {
     // if the dot went too far up or down
     if (mPosY < 0) {
         mPosY = 0;
-    }
-    else if (mPosY > SCREEN_HEIGHT - DOT_HEIGHT) {
+    } else if (mPosY > SCREEN_HEIGHT - DOT_HEIGHT) {
         mPosY = SCREEN_HEIGHT - DOT_HEIGHT;
     }
 }
 
 void Dot::render() {
     // show the dot
-    gDotTexture.render((int)mPosX, (int)mPosY);
+    gSplashTexture.render((int)mPosX, (int)mPosY);
 }
 
 void Dot::handleEvent(SDL_Event& e) {
     // add velocity on press
     if (e.type == SDL_KEYDOWN && e.key.repeat == 0) {
         switch (e.key.keysym.sym) {
-            case SDLK_UP: mVelY -= DOT_VEL; break;
-            case SDLK_DOWN: mVelY += DOT_VEL; break;
-            case SDLK_LEFT: mVelX -= DOT_VEL; break;
-            case SDLK_RIGHT: mVelX += DOT_VEL; break;
+            case SDLK_UP:
+                mVelY -= DOT_VEL;
+                break;
+            case SDLK_DOWN:
+                mVelY += DOT_VEL;
+                break;
+            case SDLK_LEFT:
+                mVelX -= DOT_VEL;
+                break;
+            case SDLK_RIGHT:
+                mVelX += DOT_VEL;
+                break;
         }
-    }
-    else if (e.type == SDL_KEYUP && e.key.repeat == 0) {
+    } else if (e.type == SDL_KEYUP && e.key.repeat == 0) {
         switch (e.key.keysym.sym) {
-            case SDLK_UP: mVelY += DOT_VEL; break;
-            case SDLK_DOWN: mVelY -= DOT_VEL; break;
-            case SDLK_LEFT: mVelX += DOT_VEL; break;
-            case SDLK_RIGHT: mVelX -= DOT_VEL; break;
+            case SDLK_UP:
+                mVelY += DOT_VEL;
+                break;
+            case SDLK_DOWN:
+                mVelY -= DOT_VEL;
+                break;
+            case SDLK_LEFT:
+                mVelX += DOT_VEL;
+                break;
+            case SDLK_RIGHT:
+                mVelX -= DOT_VEL;
+                break;
         }
     }
 }
@@ -277,7 +294,7 @@ bool init() {
     bool success = true;
 
     // initialize SDL
-    if (SDL_Init(SDL_INIT_VIDEO) < 0) {
+    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) < 0) {
         std::cout << "SDL could not initialize! SDL_Error: " << SDL_GetError() << "\n";
         success = false;
     } else {
@@ -328,8 +345,8 @@ bool loadMedia() {
     bool success = true;
 
     // load dot texture
-    if (!gDotTexture.loadFromFile("./resources/images/dot.bmp")) {
-        std::cout << "Unable to load dot texture! SDL Error: " << SDL_GetError() << "\n";
+    if (!gSplashTexture.loadFromFile("./resources/images/splash_timer.png")) {
+        std::cout << "Unable to load splash texture! SDL Error: " << SDL_GetError() << "\n";
         success = false;
     }
 
@@ -338,7 +355,7 @@ bool loadMedia() {
 
 void close() {
     // destroy data
-    gDotTexture.free();
+    gSplashTexture.free();
 
     // destroy windows
     SDL_DestroyRenderer(gRenderer);
@@ -359,8 +376,6 @@ int main(int argc, char* argv[]) {
     if (!init()) {
         std::cout << "Failed to initialize!\n";
     } else {
-
-
         // load media
         if (!loadMedia()) {
             std::cout << "Failed to load media!\n";
@@ -370,12 +385,9 @@ int main(int argc, char* argv[]) {
 
             // event handler
             SDL_Event e;
-            
-            // the dot
-            Dot dot;
 
-            // keeps track of time between steps
-            LTimer stepTimer;
+            // set callback
+            SDL_TimerID timerID = SDL_AddTimer(3 * 1000, callback, (void*)"3 seconds waited!");
 
             // while application is running
             while (!quit) {
@@ -391,28 +403,21 @@ int main(int argc, char* argv[]) {
                             quit = true;
                         }
                     }
-
-                    dot.handleEvent(e);
                 }
-
-                // calculate time step
-                float timeStep = stepTimer.getTicks() / 1000.f;
-
-                // move the dot
-                dot.move(timeStep);
-
-                // restart the step timer
-                stepTimer.start();
 
                 // clear screen
                 SDL_SetRenderDrawColor(gRenderer, 255, 255, 255, 255);
                 SDL_RenderClear(gRenderer);
 
-                dot.render();
+                // render splash
+                gSplashTexture.render(0,0);
 
                 // update the screen
                 SDL_RenderPresent(gRenderer);
             }
+
+            // remove timer in case the callback was not called
+            SDL_RemoveTimer(timerID);
         }
         // free resources and close SDL
         close();
