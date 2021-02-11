@@ -1,14 +1,12 @@
 #include <SDL.h>
 #include <SDL_image.h>
+#include <SDL_thread.h>
 #include <SDL_mixer.h>
 #include <SDL_render.h>
 #include <SDL_ttf.h>
 
-#include <fstream>
 #include <iostream>
-#include <sstream>
 #include <string>
-#include <vector>
 
 // screen dimension constants
 const int SCREEN_WIDTH = 640;
@@ -133,8 +131,8 @@ class Dot {
     float mVelX, mVelY;
 };
 
-// our test callback function
-Uint32 callback(Uint32 interval, void* param);
+// our test thread function
+int threadFunction(void* data);
 
 // starts up SDL and creates a window
 bool init();
@@ -155,9 +153,10 @@ LTexture gSplashTexture;
 // font
 TTF_Font* gFont;
 
-Uint32 callback(Uint32 interval, void* param) {
-    // print callback message
-    std::cout << "Callback called back with message: " << (char*)param << std::endl;
+int threadFunction(void* data) {
+    // print incoming data
+    std::cout << "Running thread with value = " << (intptr_t)data << std::endl;
+
     return 0;
 }
 
@@ -345,7 +344,7 @@ bool loadMedia() {
     bool success = true;
 
     // load dot texture
-    if (!gSplashTexture.loadFromFile("./resources/images/splash_timer.png")) {
+    if (!gSplashTexture.loadFromFile("./resources/images/splash_thread.png")) {
         std::cout << "Unable to load splash texture! SDL Error: " << SDL_GetError() << "\n";
         success = false;
     }
@@ -386,8 +385,9 @@ int main(int argc, char* argv[]) {
             // event handler
             SDL_Event e;
 
-            // set callback
-            SDL_TimerID timerID = SDL_AddTimer(3 * 1000, callback, (void*)"3 seconds waited!");
+            // run the thread
+            int data = 101;
+            SDL_Thread* threadID = SDL_CreateThread(threadFunction, "LazyThread", (void*)data);
 
             // while application is running
             while (!quit) {
@@ -416,8 +416,8 @@ int main(int argc, char* argv[]) {
                 SDL_RenderPresent(gRenderer);
             }
 
-            // remove timer in case the callback was not called
-            SDL_RemoveTimer(timerID);
+            // remove timer in case the call back was not called
+            SDL_WaitThread(threadID, NULL);
         }
         // free resources and close SDL
         close();
