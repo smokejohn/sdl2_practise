@@ -131,8 +131,8 @@ class Dot {
     float mVelX, mVelY;
 };
 
-// our test thread function
-int threadFunction(void* data);
+// our worker thread function
+int worker (void* data);
 
 // starts up SDL and creates a window
 bool init();
@@ -150,15 +150,15 @@ SDL_Renderer* gRenderer = NULL;
 // scene textures
 LTexture gSplashTexture;
 
+// data acces semaphore
+SDL_sem* gDataLock = NULL;
+
+// the "data buffer"
+int gData = -1;
+
 // font
 TTF_Font* gFont;
 
-int threadFunction(void* data) {
-    // print incoming data
-    std::cout << "Running thread with value = " << (intptr_t)data << std::endl;
-
-    return 0;
-}
 
 LTimer::LTimer() {
     mPausedTicks = 0;
@@ -166,6 +166,43 @@ LTimer::LTimer() {
 
     mPaused = false;
     mStarted = false;
+}
+
+int worker(void* data) {
+    std::cout << (char*)data << " starting...\n";
+
+    // pre thread random seeding
+    // seeding random values is done per thread so we make sure 
+    // to seed our random values for each thread
+    srand(SDL_GetTicks());
+
+    // work 5 times
+    for (int i = 0; i < 5; ++i) {
+        // wait randomly
+        SDL_Delay(16 + rand() % 32);
+
+        // lock
+        SDL_SemWait(gDataLock);
+
+        // print pre work data
+        std::cout << (char*)data << " gets " << gData << std::endl;
+
+        // "work"
+        gData = rand() % 256;
+
+        // print post work data
+        std::cout << (char*)data << " sets " << gData << std::endl;
+
+        // unlock
+        SDL_SemPost(gDataLock);
+
+        // wait randomly
+        SDL_Delay(16 + rand() % 640);
+    }
+
+    std::cout << (char*)data << " finished!\n\n";
+
+    return 0;
 }
 
 void LTimer::start() {
@@ -340,6 +377,9 @@ bool init() {
 }
 
 bool loadMedia() {
+    // initialize semaphore
+    gDataLock = SDL_CreateSemaphore(1);
+
     // loading success flag
     bool success = true;
 
@@ -355,6 +395,10 @@ bool loadMedia() {
 void close() {
     // destroy data
     gSplashTexture.free();
+
+    // free semaphore
+    SDL_DestroySemaphore(gDataLock);
+    gDataLock = NULL;
 
     // destroy windows
     SDL_DestroyRenderer(gRenderer);
@@ -385,9 +429,11 @@ int main(int argc, char* argv[]) {
             // event handler
             SDL_Event e;
 
-            // run the thread
-            int data = 101;
-            SDL_Thread* threadID = SDL_CreateThread(threadFunction, "LazyThread", (void*)data);
+            // run the threads
+            srand(SDL_GetTicks());
+            SDL_Thread* threadA = SDL_CreateThread(worker, "Thread A", (void*)"Thread A");
+            SDL_Delay(16 + rand() % 32);
+            SDL_Thread* threadB = SDL_CreateThread(worker, "Thread B", (void*)"Thread B");
 
             // while application is running
             while (!quit) {
@@ -416,8 +462,9 @@ int main(int argc, char* argv[]) {
                 SDL_RenderPresent(gRenderer);
             }
 
-            // remove timer in case the call back was not called
-            SDL_WaitThread(threadID, NULL);
+            // wait for threads to finish
+            SDL_WaitThread(threadA, NULL);
+            SDL_WaitThread(threadB, NULL);
         }
         // free resources and close SDL
         close();
