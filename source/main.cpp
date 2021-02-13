@@ -150,8 +150,8 @@ SDL_Renderer* gRenderer = NULL;
 // scene textures
 LTexture gSplashTexture;
 
-// data acces semaphore
-SDL_sem* gDataLock = NULL;
+// data access spinloc
+SDL_SpinLock gDataLock = 0;
 
 // the "data buffer"
 int gData = -1;
@@ -182,7 +182,7 @@ int worker(void* data) {
         SDL_Delay(16 + rand() % 32);
 
         // lock
-        SDL_SemWait(gDataLock);
+        SDL_AtomicLock(&gDataLock);
 
         // print pre work data
         std::cout << (char*)data << " gets " << gData << std::endl;
@@ -194,7 +194,7 @@ int worker(void* data) {
         std::cout << (char*)data << " sets " << gData << std::endl;
 
         // unlock
-        SDL_SemPost(gDataLock);
+        SDL_AtomicUnlock(&gDataLock);
 
         // wait randomly
         SDL_Delay(16 + rand() % 640);
@@ -377,8 +377,6 @@ bool init() {
 }
 
 bool loadMedia() {
-    // initialize semaphore
-    gDataLock = SDL_CreateSemaphore(1);
 
     // loading success flag
     bool success = true;
@@ -395,10 +393,6 @@ bool loadMedia() {
 void close() {
     // destroy data
     gSplashTexture.free();
-
-    // free semaphore
-    SDL_DestroySemaphore(gDataLock);
-    gDataLock = NULL;
 
     // destroy windows
     SDL_DestroyRenderer(gRenderer);
