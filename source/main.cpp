@@ -131,8 +131,11 @@ class Dot {
     float mVelX, mVelY;
 };
 
-// our worker thread function
-int worker (void* data);
+// our owrker functions
+int producer(void* data);
+int consumer(void* data);
+void produce();
+void consume();
 
 // starts up SDL and creates a window
 bool init();
@@ -150,8 +153,12 @@ SDL_Renderer* gRenderer = NULL;
 // scene textures
 LTexture gSplashTexture;
 
-// data access spinloc
-SDL_SpinLock gDataLock = 0;
+// the protective mutex (mutually exclusive)
+SDL_mutex* gBufferLock = NULL;
+
+// the conditions
+SDL_cond* gCanProduce = NULL;
+SDL_cond* gCanConsume = NULL;
 
 // the "data buffer"
 int gData = -1;
@@ -159,6 +166,90 @@ int gData = -1;
 // font
 TTF_Font* gFont;
 
+int producer(void* data) {
+    std::cout << "\nProducer started...\n";
+
+    // seed thread random
+    srand(SDL_GetTicks());
+
+    // produce
+    for(int i = 0; i < 5; ++i) {
+        // wait
+        SDL_Delay(rand() % 1000);
+
+        // produce
+        produce();
+    }
+
+    std::cout << "\nProducer finisehd!\n";
+
+    return 0;
+}
+
+int consumer(void* data) {
+    std::cout << "\nConsumer started...\n";
+
+    // seed thread random
+    srand(SDL_GetTicks());
+
+    // consume
+    for (int i = 0; i < 5; ++i) {
+        // wait
+        SDL_Delay(rand() % 1000);
+
+        // consume
+        consume();
+    }
+
+    std::cout << "\nConsumer finished...\n";
+
+    return 0;
+}
+
+void produce() {
+    // lock
+    SDL_LockMutex(gBufferLock);
+
+    // if the buffer is full
+    if (gData != -1) {
+        // wait for buffer to be cleared
+        std::cout << "\nProducer encountered full buffer, waiting for consumer to empty buffer...\n";
+
+        SDL_CondWait(gCanProduce, gBufferLock);
+    }
+
+    // fill and show buffer
+    gData = rand() % 255;
+    std::cout << "\nProduced " << gData << std::endl;
+
+    // unlock
+    SDL_UnlockMutex(gBufferLock);
+
+    // signal consumer
+    SDL_CondSignal(gCanConsume);
+}
+
+void consume() {
+    // lock
+    SDL_LockMutex(gBufferLock);
+
+    // if the buffer is empty
+    if (gData == -1) {
+        // wait for the buffer to be filled
+        std::cout << "\nConsumer encountered empty buffer, waiting or producer to fill buffer...\n";
+        SDL_CondWait(gCanConsume, gBufferLock);
+    }
+
+    // show and empty buffer
+    std::cout << "\nConsumed " << gData << std::endl;
+    gData = -1;
+
+    // unlock
+    SDL_UnlockMutex(gBufferLock);
+
+    // signal producer
+    SDL_CondSignal(gCanProduce);
+}
 
 LTimer::LTimer() {
     mPausedTicks = 0;
@@ -168,42 +259,6 @@ LTimer::LTimer() {
     mStarted = false;
 }
 
-int worker(void* data) {
-    std::cout << (char*)data << " starting...\n";
-
-    // pre thread random seeding
-    // seeding random values is done per thread so we make sure 
-    // to seed our random values for each thread
-    srand(SDL_GetTicks());
-
-    // work 5 times
-    for (int i = 0; i < 5; ++i) {
-        // wait randomly
-        SDL_Delay(16 + rand() % 32);
-
-        // lock
-        SDL_AtomicLock(&gDataLock);
-
-        // print pre work data
-        std::cout << (char*)data << " gets " << gData << std::endl;
-
-        // "work"
-        gData = rand() % 256;
-
-        // print post work data
-        std::cout << (char*)data << " sets " << gData << std::endl;
-
-        // unlock
-        SDL_AtomicUnlock(&gDataLock);
-
-        // wait randomly
-        SDL_Delay(16 + rand() % 640);
-    }
-
-    std::cout << (char*)data << " finished!\n\n";
-
-    return 0;
-}
 
 void LTimer::start() {
     mStarted = true;
@@ -377,6 +432,12 @@ bool init() {
 }
 
 bool loadMedia() {
+    // create the mutex
+    gBufferLock = SDL_CreateMutex();
+
+    // create conditions
+    gCanProduce = SDL_CreateCond();
+    gCanConsume = SDL_CreateCond();
 
     // loading success flag
     bool success = true;
@@ -393,6 +454,16 @@ bool loadMedia() {
 void close() {
     // destroy data
     gSplashTexture.free();
+
+    // destroy the mutex
+    SDL_DestroyMutex(gBufferLock);
+    gBufferLock = NULL;
+
+    // destroy the conditions
+    SDL_DestroyCond(gCanConsume);
+    SDL_DestroyCond(gCanProduce);
+    gCanConsume = NULL;
+    gCanProduce = NULL;
 
     // destroy windows
     SDL_DestroyRenderer(gRenderer);
@@ -425,9 +496,9 @@ int main(int argc, char* argv[]) {
 
             // run the threads
             srand(SDL_GetTicks());
-            SDL_Thread* threadA = SDL_CreateThread(worker, "Thread A", (void*)"Thread A");
+            SDL_Thread* threadA = SDL_CreateThread(producer, "Thread A", (void*)"Thread A");
             SDL_Delay(16 + rand() % 32);
-            SDL_Thread* threadB = SDL_CreateThread(worker, "Thread B", (void*)"Thread B");
+            SDL_Thread* threadB = SDL_CreateThread(consumer, "Thread B", (void*)"Thread B");
 
             // while application is running
             while (!quit) {
